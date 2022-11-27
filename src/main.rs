@@ -1,58 +1,62 @@
 use std::io::Write;
+use std::os::raw::c_int;
 use sqlx::mysql::MySqlPool;
 use std::ptr::null;
 use sqlx::MySql;
 // Importamos try_read que devuelve un error si falla y el tipo de error que devuelve
 use text_io::{try_read};
 use anyhow::{Result, Error, anyhow};
+use crate::MoneyOptions::{Q100, Q1000, Q200, Q2000};
+use crate::Opcion::{ConsultarSaldo, DepositarEfectivo, RetirarEfectivo, TransferirEfectivo};
 
-#[derive(Debug, sqlx::FromRow)]
-struct User {
-    nom_card: String,
-    F_name: String,
-    M_name: String,
-    #[sqlx(default)]
-    C_id: i32,
-
+#[derive(Clone, Copy)]
+enum Opcion {
+    ConsultarSaldo,
+    RetirarEfectivo,
+    DepositarEfectivo,
+    TransferirEfectivo,
+    Salir
 }
 
-#[derive(Default, Clone)]
-#[derive(Debug, sqlx::FromRow)]
-struct card{
-    Card_No:String,
-    Card_nip:i32,
-    #[sqlx(default)]
-    Card_Balance:f64,
-    #[sqlx(default)]
-    Card_Type:String,
-    #[sqlx(default)]
-    Card_ExpiryDate:String,
-    #[sqlx(default)]
-    Card_CVV:String,
-    #[sqlx(default)]
-    Card_status:bool,
-    #[sqlx(default)]
-    Card_Bankname:String,
+#[derive(Clone, Copy)]
+enum MoneyOptions {
+    Q100    = 100,
+    Q200    = 200,
+    Q500    = 500,
+    Q1000   = 1000,
+    Q2000   = 2000,
+    Q4000   = 4000,
 }
 
+#[derive(Clone)]
 #[derive(Debug, sqlx::FromRow)]
-struct atm_machine{
-    ATM_id:i32,
-    ATM_name:String,
-    ATM_add:String,
-    ATM_bankname:String,
-    ATM_money:f64,
+struct Card {
+    number:String,
+    bank_id:u32,
+    cvv:u32,
+    nip:i32,
+    expiration_date: sqlx::types::time::Date,
+    balance:f64,
+    r#type:String,
+    expired:bool,
+    r#try:u32,
 }
 
-impl card {
-    fn new (Card_No:String, Card_nip:i32) -> card {
-        card {
-            Card_No,
-            Card_nip,
-            ..Default::default()
+macro_rules! debug {
+    ( $($t:tt)* ) => {
+        {
+            #[cfg(debug_assertions)]
+            println!($($t)*);
         }
     }
+}
 
+#[derive(Debug, sqlx::FromRow)]
+struct Atm {
+    name:String,
+    address:String,
+    bank_id:u32,
+    money:f64,
 }
 
 fn input(msg: &str) -> Result<String> {
@@ -80,15 +84,24 @@ async fn make_query<T>(query: impl AsRef<str>, connection: &sqlx::Pool<MySql>) -
     }
 }
 
-async fn get_atm(connection: &sqlx::Pool<MySql>) -> Result<atm_machine> {
+async fn get_atm(connection: &sqlx::Pool<MySql>) -> Result<Atm> {
     if let Some(addr) = mac_address::get_mac_address()? {
-        let q = format!("insert into atm_machine (atm_id, atm_name, ATM_Add, ATM_Bankname, ATM_money)
-values (1,'{addr}', 'Oso 81, Col del Valle Centro, Benito Juárez, 03100 Ciudad de México, CDMX', 'Santander', 200000.0)");
-        let crear = sqlx::query(&q)
-            .fetch_all(connection)
-            .await?;
-        let q = format!("select * from atm_machine where atm_name = '{addr}'");
-        let result = make_query::<atm_machine>(q, connection).await?;
+
+        let q = format!("select * from atms where name = '{addr}'");
+        let mut result = make_query::<Atm>(&q, connection).await;
+
+        let result = if result.is_err() {
+            let insert_q = format!("insert into atms (name, address, bank_id , money)
+values ('{addr}', 'Oso 81, Col del Valle Centro, Benito Juárez, 03100 Ciudad de México, CDMX', 2
+, 200000.0)");
+            sqlx::query(&insert_q)
+                .fetch_all(connection)
+                .await?;
+
+            make_query::<Atm>(&q, connection).await?
+        } else {
+            result?
+        };
 
         if result.len() == 1 {
             Ok(result.into_iter().next().unwrap())
@@ -101,60 +114,214 @@ values (1,'{addr}', 'Oso 81, Col del Valle Centro, Benito Juárez, 03100 Ciudad 
     }
 }
 
-async fn iniciar_sesion(connection: &sqlx::Pool<MySql>) -> Result<card> {
-    let mut i = 0;
+async fn iniciar_sesion(connection: &sqlx::Pool<MySql>) -> Result<Card> {
+    let tarjeta = input("Ingrese el número de tarjeta: ")?;
+    let nip = input("Ingrese el nip: ")?;
 
-    loop {
-        let tarjeta = input("Ingrese el número de tarjeta: ")?;
-        let nip = input("Ingrese el nip: ")?;
-
-        let query = format!(r#"select Card_No, Card_nip from card where Card_No = "{tarjeta}" and Card_nip = "{nip}" "# );
-        if let cartas =  make_query::<card>(query, connection).await? {
-            if cartas.len() == 1 {
-                break Ok(cartas.into_iter().next().unwrap());
-            } else {
-                break Err(anyhow!("Se encontró mas de un dato"));
-            }
-        } else {
-            i+=1;
-            if i == 3 {
-                break Err(anyhow!("Se intentó ingresar demasiadas veces"));
-            }
-        }
+    let query = format!(r#"select * from cards where number = "{tarjeta}" and nip = "{nip}" "# );
+    let cartas =  make_query::<Card>(query, connection).await?;
+    if cartas.len() == 1 {
+        Ok(cartas.into_iter().next().unwrap())
+    } else {
+        Err(anyhow!("Se encontró mas de un dato"))
     }
 }
 
-async fn app(connection: &sqlx::Pool<MySql>) -> Result<()>  {
+
+impl TryFrom<u8> for MoneyOptions {
+    type Error = Error;
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        use MoneyOptions::*;
+        let tipo = match value {
+            x if x == 1 => Q100,
+            x if x == 2 => Q200,
+            x if x == 3 => Q500,
+            x if x == 4 => Q1000,
+            x if x == 5 => Q2000,
+            x if x == 6 => Q4000,
+            _ => {
+                return Err(anyhow!("Opción no valida"));
+            }
+        };
+        Ok(tipo)
+    }
+}
 
 
 
-    let result2 = iniciar_sesion(connection).await?;
-    println!("Result2: {:#?}", result2);
+impl TryFrom<u8> for Opcion {
+    type Error = Error;
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        use Opcion::*;
+        let tipo = match value {
+            x if x == 1 => ConsultarSaldo,
+            x if x == 2 => RetirarEfectivo,
+            x if x == 3 => DepositarEfectivo,
+            x if x == 4 => TransferirEfectivo,
+            x if x == 5 => Salir,
+            _ => {
+                return Err(anyhow!("Opción no valida"));
+            }
+        };
+        Ok(tipo)
+    }
+}
 
+fn menu() -> Result<Opcion> {
+    println!("1. Consultar saldo");
+    println!("2. Retirar efectivo");
+    println!("3. Depositar efectivo");
+    println!("4. Transferir efectivo");
+    println!("5. Salir");
+
+    let opcion: u8 = input("Elige una opción: ")?.parse()?;
+    Opcion::try_from(opcion)
+}
+
+fn elegir_dinero() -> Result<MoneyOptions> {
+    let opcion = loop {
+        println!("1. 100 $ pesos");
+        println!("2. 200 $ pesos");
+        println!("3. 500 $ pesos");
+        println!("4. 1000 $ pesos");
+        println!("5. 2000 $ pesos");
+        println!("6. 4000 $ pesos");
+        let opcion: u8 = input("Elige una opción: ")?.parse()?;
+
+        if let Ok(money) = MoneyOptions::try_from(opcion) {
+            break money;
+        } else {
+            println!("Opción no válida");
+        }
+    };
+    Ok(opcion)
+}
+async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
+
+    let mut card = iniciar_sesion(connection).await?;
+    println!("Result2: {:#?}", card);
+    println!("Bienvenido");
+    loop {
+        match  menu(){
+             Ok(opcion) => {
+                match opcion {
+                    ConsultarSaldo => {
+                        println!("El dinero en la cuenta es {} $ pesos", card.balance);
+                    },
+                    RetirarEfectivo => {
+                        let opcion = elegir_dinero()?;
+
+                        let dinero = card.balance - opcion as i32 as f64;
+                        let atm_dinero = atm.money - opcion as i32 as f64;
+                        if dinero >= 0.  && atm_dinero >= 0. {
+                            let _ = sqlx::query(
+                                &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
+                            ).execute(connection).await?;
+                            let _ = sqlx::query(
+                                &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
+                            ).execute(connection).await?;
+                            let _ = sqlx::query(
+                                 &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm.name, card.number),
+                            ).execute(connection).await?;
+
+                            card.balance = dinero;
+                            atm.money = atm_dinero;
+                            println!("Retiro exitoso {}", card.balance);
+                        } else {
+                            println!("No tienes suficiente dinero");
+                        }
+
+                    },
+                    DepositarEfectivo => {
+                        let opcion = elegir_dinero()?;
+                        let dinero = card.balance + opcion as i32 as f64;
+                        let atm_dinero = atm.money + opcion as i32 as f64;
+                        let _ = sqlx::query(
+                            &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
+                        ).execute(connection).await?;
+                        let _ = sqlx::query(
+                            &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
+                        ).execute(connection).await?;
+                        let _ = sqlx::query(
+                            &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opcion as i32,card.number ,atm.name),
+                        ).execute(connection).await?;
+                        card.balance = dinero;
+                        atm.money = atm_dinero;
+                        println!("Deposito exitoso {} ", card.balance);
+                        debug!("ATM dinero: {}", atm.money);
+                    },
+                    TransferirEfectivo => {
+                        loop {
+                            let numero_tarjeta = input("Ingresa el número de la tarjeta: ")?;
+
+                            if numero_tarjeta == card.number {
+                                println!("No puedes transferirte a ti mismo");
+                                continue;
+                            }
+
+                            let q = format!("select * from cards where number = '{numero_tarjeta}'");
+                            let mut target = make_query::<Card>(&q, connection).await;
+
+                            let target = if let Ok(target) = target {
+                                target
+                            } else {
+                                println!("No existe la tarjeta");
+                                continue;
+                            };
+
+                            if target.len() == 1  {
+                                let opcion = elegir_dinero()?;
+                                let dinero = card.balance - opcion as i32 as f64;
+                                if dinero > 0. && card.r#type == "Debit"{
+                                    let _ = sqlx::query(
+                                        &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
+                                    ).execute(connection).await?;
+                                    let _ = sqlx::query(
+                                        &format!(r#"UPDATE cards SET balance = {} WHERE number = {}"#, target[0].balance + opcion as i32 as f64, target[0].number),
+                                    ).execute(connection).await?;
+                                    let _ = sqlx::query(
+                                        &format!(r#"INSERT INTO transfers (amount, sent_money, received_money) VALUES ({}, "{}","{}")"#, opcion as i32, card.number, target[0].number),
+                                    ).execute(connection).await?;
+                                    card.balance = dinero;
+                                    println!("Transferencia exitosa {} ", card.balance);
+                                    break;
+                                }else{
+                                    println!("No tienes suficiente dinero");
+                                }
+                            }else {
+                                println!("No existe la tarjeta");
+                            }
+                        }
+                    },
+                    _ => {
+                        println!("Salir");
+                        break;
+                    }
+                }
+            },
+            Err(e) => {
+                println!("Error: {}", e);
+            }
+        }
+    }
     Ok(())
 }
+
+
 
 #[tokio::main]
 async fn main() {
     let connection = MySqlPool::connect("mysql://root:1234@localhost/Banco").await.unwrap();
-    let atm = get_atm(&connection).await.unwrap();
+    let mut atm = get_atm(&connection).await.unwrap();
 
     println!("{atm:?}");
 
     loop {
-        match app(&connection).await {
+        match app(&mut atm, &connection).await {
             Err(error) => {
                 println!("Error: {}", error);
-                continue
             },
             Ok(_) => {}
         }
     }
 }
-
-
-/*
-    let result = sqlx::query_as::<_, Instructor>(&format!("select ID, {campos} from instructor"))
-        .fetch_all(&connection)
-        .await?;
-*/

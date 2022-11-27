@@ -5,7 +5,7 @@ edition = "2021"
 
 
 [dependencies]
-sqlx = { version = "0.6.2", features = ["mysql", "runtime-tokio-native-tls", "macros"] }
+sqlx = { version = "0.6.2", features = ["mysql", "runtime-tokio-native-tls", "macros", "time"] }
 tokio = { version = "1.21.2", features = ["full"] }
 text_io = "0.1.10"
 clap = { version = "4.0.24", features = ["derive"] }

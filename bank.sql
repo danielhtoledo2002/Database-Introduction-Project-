@@ -1,128 +1,225 @@
-CREATE TABLE `atm_machine` (
-  `ATM_id` int DEFAULT NULL ,
-  `ATM_name` varchar(100) NOT NULL,
-  `ATM_add` varchar(100) DEFAULT NULL,
-  `ATM_bankname` varchar(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
-  `ATM_money` double DEFAULT NULL,
-  PRIMARY KEY (`ATM_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
 
-CREATE TABLE `card` (
-  `Card_No` varchar(16) NOT NULL COMMENT 'Nomber of the card',
-  `Card_Bankname` varchar(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT 'Name bank',
-  `Card_CVV` int NOT NULL,
-  `Card_nip` int NOT NULL check (Card_nip between 0 and 9999),
-  `Card_ExpiryDate` date NOT NULL,
-  `Card_Balance` double NOT NULL COMMENT 'Money',
-  `Card_Type` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT 'Credit or Debit',
-  `Card_status` bit(1) DEFAULT NULL COMMENT 'Si esta bloqueada o no',
-  PRIMARY KEY (`Card_No`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+-- ----------------------------
+-- Table structure for atms
+-- ----------------------------
+DROP TABLE IF EXISTS `atms`;
+CREATE TABLE `atms` (
+    `name` varchar(255) NOT NULL,
+    `address` varchar(255) NOT NULL,
+    `bank_id` int(10) unsigned NOT NULL,
+    `money` double unsigned NOT NULL,
+    PRIMARY KEY (`name`),
+    KEY `bank_id_f` (`bank_id`),
+    CONSTRAINT `bank_id_f` FOREIGN KEY (`bank_id`) REFERENCES `bancos` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `customer` (
-  `C_id` int DEFAULT NULL,
-  `F_name` varchar(15) DEFAULT NULL,
-  `M_name` varchar(15) DEFAULT NULL,
-  `nom_card` varchar(16) DEFAULT NULL,
-  KEY `clientes_FK` (`nom_card`),
-  CONSTRAINT `clientes_FK` FOREIGN KEY (`nom_card`) REFERENCES `card` (`Card_No`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+-- ----------------------------
+-- Records of atms
+-- ----------------------------
+BEGIN;
+INSERT INTO `atms` (`name`, `address`, `bank_id`, `money`) VALUES ('BB_021', 'Av. de los Insurgentes Sur 1323, Insurgentes Mixcoac, Benito Juárez, 03920 Ciudad de México, CDMX', 2, 123010);
+INSERT INTO `atms` (`name`, `address`, `bank_id`, `money`) VALUES ('BB_156', 'Av. Revolución 1579, San Ángel, Álvaro Obregón, 01000 Ciudad de México, CDMX', 2, 220000);
+INSERT INTO `atms` (`name`, `address`, `bank_id`, `money`) VALUES ('CB_102', 'Felipe Carrillo Puerto 3, Coyoacán, 04100 Ciudad de México, CDMX', 3, 190000);
+INSERT INTO `atms` (`name`, `address`, `bank_id`, `money`) VALUES ('S_064', 'Oso 81, Col del Valle Centro, Benito Juárez, 03100 Ciudad de México, CDMX', 2, 200000);
+INSERT INTO `atms` (`name`, `address`, `bank_id`, `money`) VALUES ('S_067', 'Av. Insurgentes Sur 1883, Guadalupe Inn, Álvaro Obregón, CDMX', 2, 152100);
+COMMIT;
 
-CREATE TABLE `deposit` (
-  `id_deposito` int DEFAULT NULL,
-  `amount` double DEFAULT NULL,
-  `date` datetime DEFAULT NULL,
-  `atm_name` varchar(10) NOT NULL,
-  KEY `deposito_FK` (`atm_name`),
-  CONSTRAINT `deposito_FK` FOREIGN KEY (`atm_name`) REFERENCES `atm_machine` (`ATM_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+-- ----------------------------
+-- Table structure for bancos
+-- ----------------------------
+DROP TABLE IF EXISTS `bancos`;
+CREATE TABLE `bancos` (
+    `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+    `name` varchar(255) NOT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `transfer` (
-  `id_transfer` int NOT NULL AUTO_INCREMENT,
-  `Shipping` varchar(16) NOT NULL COMMENT 'envio el dinero',
-  `received` varchar(16) NOT NULL COMMENT 'recibio el dinero',
-  `date` datetime DEFAULT NULL,
-  `amount` double DEFAULT NULL COMMENT 'cantidad que se envio',
-  PRIMARY KEY (`id_transfer`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+-- ----------------------------
+-- Records of bancos
+-- ----------------------------
+BEGIN;
+INSERT INTO `bancos` (`id`, `name`) VALUES (2, 'Santander');
+INSERT INTO `bancos` (`id`, `name`) VALUES (3, 'BBVA');
+INSERT INTO `bancos` (`id`, `name`) VALUES (4, 'Citibanamex');
+COMMIT;
 
-CREATE TABLE `withdrawal_money` (
-  `id_retiro` int DEFAULT NULL,
-  `amount` double DEFAULT NULL,
-  `date` datetime DEFAULT NULL,
-  `nombre_atm` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
-  KEY `retiro_FK` (`nombre_atm`),
-  CONSTRAINT `retiro_FK` FOREIGN KEY (`nombre_atm`) REFERENCES `atm_machine` (`ATM_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+-- ----------------------------
+-- Table structure for cards
+-- ----------------------------
+DROP TABLE IF EXISTS `cards`;
+CREATE TABLE `cards` (
+     `number` varchar(16) NOT NULL,
+     `bank_id` int(10) unsigned NOT NULL,
+     `cvv` int(10) unsigned NOT NULL,
+     `nip` int(11) NOT NULL,
+     `expiration_date` date NOT NULL,
+     `balance` double unsigned NOT NULL,
+     `type` varchar(10) NOT NULL,
+     `expired` tinyint(1) NOT NULL,
+     `try` int(10) unsigned NOT NULL DEFAULT 0,
+     PRIMARY KEY (`number`),
+     KEY `bank_id_fk` (`bank_id`),
+     CONSTRAINT `bank_id_fk` FOREIGN KEY (`bank_id`) REFERENCES `bancos` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ----------------------------
+-- Records of cards
+-- ----------------------------
+BEGIN;
+INSERT INTO `cards` (`number`, `bank_id`, `cvv`, `nip`, `expiration_date`, `balance`, `type`, `expired`, `try`) VALUES ('1426045760345700', 2, 423, 1233, '2025-11-11', 45215, 'Debit', 0, 0);
+INSERT INTO `cards` (`number`, `bank_id`, `cvv`, `nip`, `expiration_date`, `balance`, `type`, `expired`, `try`) VALUES ('1426045781603457', 2, 423, 1233, '2025-11-11', 45215, 'Debit', 0, 0);
+INSERT INTO `cards` (`number`, `bank_id`, `cvv`, `nip`, `expiration_date`, `balance`, `type`, `expired`, `try`) VALUES ('4578015464893204', 2, 130, 1233, '2025-06-23', 17590, 'Credit', 0, 0);
+INSERT INTO `cards` (`number`, `bank_id`, `cvv`, `nip`, `expiration_date`, `balance`, `type`, `expired`, `try`) VALUES ('7598150468901754', 2, 457, 1233, '2025-12-05', 7546, 'Credit', 0, 0);
+INSERT INTO `cards` (`number`, `bank_id`, `cvv`, `nip`, `expiration_date`, `balance`, `type`, `expired`, `try`) VALUES ('8105460479831056', 3, 684, 1233, '2023-03-12', 24321, 'Debit', 0, 0);
+COMMIT;
 
+-- ----------------------------
+-- Table structure for customers
+-- ----------------------------
+DROP TABLE IF EXISTS `customers`;
+CREATE TABLE `customers` (
+     `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+     `name` varchar(255) NOT NULL,
+     `surname` varchar(255) NOT NULL,
+     `card_number` varchar(16) NOT NULL,
+     PRIMARY KEY (`id`),
+     KEY `card_number_fk` (`card_number`),
+     CONSTRAINT `card_number_fk` FOREIGN KEY (`card_number`) REFERENCES `cards` (`number`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4;
 
+-- ----------------------------
+-- Records of customers
+-- ----------------------------
+BEGIN;
+INSERT INTO `customers` (`id`, `name`, `surname`, `card_number`) VALUES (1, 'Arnulfo', 'Carrera', '4578015464893204');
+INSERT INTO `customers` (`id`, `name`, `surname`, `card_number`) VALUES (2, 'Ana', 'Armira', '7598150468901754');
+INSERT INTO `customers` (`id`, `name`, `surname`, `card_number`) VALUES (3, 'María', 'Vásquez', '8105460479831056');
+INSERT INTO `customers` (`id`, `name`, `surname`, `card_number`) VALUES (4, 'Edgar', 'Culajay', '1426045781603457');
+INSERT INTO `customers` (`id`, `name`, `surname`, `card_number`) VALUES (5, 'Lilian', 'Rodríguez', '1426045760345700');
+COMMIT;
 
-insert into atm_machine (atm_id, atm_name, ATM_Add, ATM_Bankname, ATM_money)
-values (1,'S_064', 'Oso 81, Col del Valle Centro, Benito Juárez, 03100 Ciudad de México, CDMX', 'Santander', 200000.0);
-insert into atm_machine (atm_id, atm_name, ATM_Add, ATM_Bankname, ATM_money)
-values (2,'S_067', 'Av. Insurgentes Sur 1883, Guadalupe Inn, Álvaro Obregón, CDMX', 'Santander', 152100.0);
-insert into atm_machine (atm_id, atm_name, ATM_Add, ATM_Bankname, ATM_money)
-values (3,'BB_021', 'Av. de los Insurgentes Sur 1323, Insurgentes Mixcoac, Benito Juárez, 03920 Ciudad de México, CDMX
-', 'BBVA', 123010.0);
-insert into atm_machine (atm_id, atm_name, ATM_Add, ATM_Bankname, ATM_money)
-values (4,'BB_156', 'Av. Revolución 1579, San Ángel, Álvaro Obregón, 01000 Ciudad de México, CDMX
-', 'BBVA',220000.0 );
-insert into atm_machine (atm_id, atm_name, ATM_Add, ATM_Bankname, ATM_money)
-values (5,'CB_102', 'Felipe Carrillo Puerto 3, Coyoacán, 04100 Ciudad de México, CDMX
-', 'Citibanamex',190000.0 );
+-- ----------------------------
+-- Table structure for deposits
+-- ----------------------------
+DROP TABLE IF EXISTS `deposits`;
+CREATE TABLE `deposits` (
+    `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+    `amount` double unsigned NOT NULL,
+    `date` date NOT NULL,
+    `card_number` varchar(16) NOT NULL,
+    `atm_name` varchar(255) NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `card_number_fk2` (`card_number`),
+    KEY `atm_name_fk2` (`atm_name`),
+    CONSTRAINT `atm_name_fk2` FOREIGN KEY (`atm_name`) REFERENCES `atms` (`name`),
+    CONSTRAINT `card_number_fk2` FOREIGN KEY (`card_number`) REFERENCES `cards` (`number`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4;
 
-insert into card (card_No, Card_Bankname, Card_CVV, Card_ExpiryDate, Card_balance, Card_type, Card_status, Card_nip)
-values ('1426045781603457', 'Santander', 423, '2025-11-11', 45215.0, 'Debit', 1, 3455);
-insert into card (card_No, Card_Bankname, Card_CVV, Card_ExpiryDate, Card_balance, Card_type, Card_status, Card_nip)
-values ('3248904237510568', 'Santander', 124, '2024-01-26', 2641.0, 'Debit', 1, 3455);
-insert into card (card_No, Card_Bankname, Card_CVV, Card_ExpiryDate, Card_balance, Card_type, Card_status, Card_nip)
-values ('4578015464893204', 'BBVA', 130, '2025-06-23', 17590.0, 'Credit', 1, 3455);
-insert into card (card_No, Card_Bankname, Card_CVV, Card_ExpiryDate, Card_balance, Card_type, Card_status, Card_nip)
-values ('7598150468901754', 'BBVA', 457, '2025-12-05', 7546.0, 'Credit', 1, 3455);
-insert into card (card_No, Card_Bankname, Card_CVV, Card_ExpiryDate, Card_balance, Card_type, Card_status, Card_nip)
-values ('8105460479831056', 'Citibanamex', 684, '2023-03-12', 24321.0, 'Debit', 1, 3455);
+-- ----------------------------
+-- Records of deposits
+-- ----------------------------
+BEGIN;
+INSERT INTO `deposits` (`id`, `amount`, `date`, `card_number`, `atm_name`) VALUES (3, 100, '2022-11-26', '4578015464893204', 'S_064');
+INSERT INTO `deposits` (`id`, `amount`, `date`, `card_number`, `atm_name`) VALUES (4, 250, '2022-11-26', '7598150468901754', 'S_064');
+INSERT INTO `deposits` (`id`, `amount`, `date`, `card_number`, `atm_name`) VALUES (5, 200, '2022-11-26', '1426045781603457', 'S_064');
+INSERT INTO `deposits` (`id`, `amount`, `date`, `card_number`, `atm_name`) VALUES (6, 1000, '2022-11-26', '1426045760345700', 'S_064');
+INSERT INTO `deposits` (`id`, `amount`, `date`, `card_number`, `atm_name`) VALUES (7, 450, '2022-11-26', '1426045760345700', 'S_064');
+COMMIT;
 
-insert into customer(C_id, F_name, M_name, nom_card)
-values (1, 'Arnulfo', 'Carrera', '4578015464893204');
-insert into customer(C_id, F_name, M_name, nom_card)
-values (2, 'Ana', 'Armira', '7598150468901754');
-insert into customer(C_id, F_name, M_name, nom_card)
-values (3, 'María', 'Vásquez', '8105460479831056');
-insert into customer(C_id, F_name, M_name, nom_card)
-values (4, 'Edgar', 'Culajay', '1426045781603457');
-insert into customer(C_id, F_name, M_name, nom_card)
-values (5, 'Lilian', 'Rodríguez', '3248904237510568');
+-- ----------------------------
+-- Table structure for transfers
+-- ----------------------------
+DROP TABLE IF EXISTS `transfers`;
+CREATE TABLE `transfers` (
+     `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+     `date` date NOT NULL,
+     `amount` double unsigned NOT NULL,
+     `sent_money` varchar(16) NOT NULL,
+     `received_money` varchar(16) NOT NULL,
+     PRIMARY KEY (`id`),
+     KEY `rc_money_card` (`received_money`),
+     KEY `st_money_card` (`sent_money`),
+     CONSTRAINT `rc_money_card` FOREIGN KEY (`received_money`) REFERENCES `cards` (`number`),
+     CONSTRAINT `st_money_card` FOREIGN KEY (`sent_money`) REFERENCES `cards` (`number`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4;
 
-insert into deposit(id_deposito, amount, date, atm_name)
-values (1, 100, '2022-10-13 15:40:42', 'CB_102');
-insert into deposit(id_deposito, amount, date,atm_name)
-values (2, 250, '2022-10-14 10:42:11', 'S_064');
-insert into deposit(id_deposito, amount, date, atm_name)
-values (3, 200, '2022-10-14 20:01:46', 'S_067');
-insert into deposit(id_deposito, amount, date, atm_name)
-values (4, 1000, '2022-11-02 12:16:55', 'BB_156');
-insert into deposit(id_deposito, amount, date, atm_name)
-values (5, 450, '2022-11-03 13:23:02', 'BB_021');
+-- ----------------------------
+-- Records of transfers
+-- ----------------------------
+BEGIN;
+INSERT INTO `transfers` (`id`, `date`, `amount`, `sent_money`, `received_money`) VALUES (1, '2022-11-26', 1540, '4578015464893204', '1426045781603457');
+INSERT INTO `transfers` (`id`, `date`, `amount`, `sent_money`, `received_money`) VALUES (2, '2022-11-26', 450, '7598150468901754', '1426045760345700');
+INSERT INTO `transfers` (`id`, `date`, `amount`, `sent_money`, `received_money`) VALUES (3, '2022-11-26', 2600, '8105460479831056', '4578015464893204');
+INSERT INTO `transfers` (`id`, `date`, `amount`, `sent_money`, `received_money`) VALUES (4, '2022-11-26', 5000, '1426045760345700', '7598150468901754');
+INSERT INTO `transfers` (`id`, `date`, `amount`, `sent_money`, `received_money`) VALUES (5, '2022-11-26', 500, '1426045760345700', '1426045781603457');
+COMMIT;
 
-insert into transfer(id_transfer, Shipping, received, date, amount)
-values (1, '1426045781603457', '4578015464893204', '2022-10-13 10:15:26', 1540.0);
-insert into transfer(id_transfer, Shipping, received, date, amount)
-values (2, '3248904237510568', '7598150468901754', '2022-10-13 23:16:56', 450.0);
-insert into transfer(id_transfer, Shipping, received, date, amount)
-values (3, '4578015464893204', '8105460479831056', '2022-10-29 09:46:11', 2600.0);
-insert into transfer(id_transfer, Shipping, received, date, amount)
-values (4, '7598150468901754', '1426045781603457', '2022-11-01 13:52:46', 5000.0);
-insert into transfer(id_transfer, Shipping, received, date, amount)
-values (5, '1426045781603457', '3248904237510568', '2022-11-03 20:16:10', 500.0);
+-- ----------------------------
+-- Table structure for withdrawals
+-- ----------------------------
+DROP TABLE IF EXISTS `withdrawals`;
+CREATE TABLE `withdrawals` (
+    `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+    `amount` double NOT NULL,
+    `date` date NOT NULL,
+    `atm_name` varchar(255) NOT NULL,
+    `card_number` varchar(16) NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `atm_name_fk` (`atm_name`),
+    KEY `card_number_fk3` (`card_number`),
+    CONSTRAINT `atm_name_fk` FOREIGN KEY (`atm_name`) REFERENCES `atms` (`name`),
+    CONSTRAINT `card_number_fk3` FOREIGN KEY (`card_number`) REFERENCES `cards` (`number`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4;
 
-insert into withdrawal_money(id_retiro, amount, date, nombre_atm)
-VALUES (1, 1540, '2022-10-01 12:15:46', 'S_064');
-insert into withdrawal_money(id_retiro, amount, date, nombre_atm)
-VALUES (2, 540, '2022-10-12 13:45:48', 'CB_102');
-insert into withdrawal_money(id_retiro, amount, date, nombre_atm)
-VALUES (3, 200, '2022-10-02 15:10:12', 'BB_156');
-insert into withdrawal_money(id_retiro, amount, date, nombre_atm)
-VALUES (4, 1000, '2022-10-25 20:26:04', 'BB_021');
-insert into withdrawal_money(id_retiro, amount, date, nombre_atm)
-VALUES (5, 2500, '2022-11-14 10:50:42', 'S_067');
+-- ----------------------------
+-- Triggers structure for table cards
+-- ----------------------------
+DROP TRIGGER IF EXISTS `check_valid`;
+delimiter ;;
+CREATE TRIGGER `check_valid` BEFORE UPDATE ON `cards` FOR EACH ROW IF OLD.expiration_date <= now() THEN
+    SET NEW.expired = 1;
+END IF
+;;
+delimiter ;
+
+-- ----------------------------
+-- Triggers structure for table cards
+-- ----------------------------
+DROP TRIGGER IF EXISTS `check_try`;
+delimiter ;;
+CREATE TRIGGER `check_try` BEFORE UPDATE ON `cards` FOR EACH ROW IF OLD.try = 3 THEN
+    SET NEW.expired = 1;
+END IF
+;;
+delimiter ;
+
+-- ----------------------------
+-- Triggers structure for table deposits
+-- ----------------------------
+DROP TRIGGER IF EXISTS `set_date`;
+delimiter ;;
+CREATE TRIGGER `set_date` BEFORE INSERT ON `deposits` FOR EACH ROW SET NEW.date = CURTIME()
+;;
+delimiter ;
+
+-- ----------------------------
+-- Triggers structure for table transfers
+-- ----------------------------
+DROP TRIGGER IF EXISTS `set_date_transfer`;
+delimiter ;;
+CREATE TRIGGER `set_date_transfer` BEFORE INSERT ON `transfers` FOR EACH ROW SET NEW.date = CURTIME()
+;;
+delimiter ;
+
+-- ----------------------------
+-- Triggers structure for table withdrawals
+-- ----------------------------
+DROP TRIGGER IF EXISTS `set_date_with`;
+delimiter ;;
+CREATE TRIGGER `set_date_with` BEFORE INSERT ON `withdrawals` FOR EACH ROW SET NEW.date = CURTIME()
+;;
+delimiter ;
+
+SET FOREIGN_KEY_CHECKS = 1;

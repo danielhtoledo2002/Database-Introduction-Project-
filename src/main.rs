@@ -227,7 +227,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
 #[tokio::main]
 async fn main() {
-    let connection = MySqlPool::connect("mysql://daniel:1234@201.145.156.9/banco").await.unwrap();
+    let connection = MySqlPool::connect("mysql://root:1234@localhost/banco").await.unwrap();
     let mut atm = get_atm(&connection).await.unwrap();
 
     println!("{atm:?}");

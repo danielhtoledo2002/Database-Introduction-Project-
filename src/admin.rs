@@ -92,7 +92,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                 block_unlock(connection, true).await?;
             },
             Opcion::RegistrarTarjeta => {
-                loop {
+                let tarjeta = loop {
                     let tarjeta = input("Ingrese la tarjeta que desea registrar: ")?;
                     if tarjeta.len() != 16 {
                         println!("Error: La tarjeta debe ser de 16 dígitos");
@@ -109,7 +109,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         println!("Ya existe la tarjeta");
                         continue;
                     } else {
-                        break;
+                         break tarjeta
                     }
                 };
 
@@ -191,23 +191,21 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         }
                     };
 
-                    let r#type = loop {
-                        let r#type = input("Ingrese el tipo de tarjeta: ")?;
-                        if r#type == "Debit" || r#type == "Credit" {
-                            break r#type;
+                    let rtype = loop {
+                        let rtype = input("Ingrese el tipo de tarjeta: ")?;
+                        if rtype == "Debit" || rtype == "Credit" {
+                            break rtype;
                         }else {
                             println!("Ingrese un tipo valido");
                             continue;
                         }
                     };
+                println!("{}", rtype);
 
                     let _ = sqlx::query(
                         &format!(
-                            r#"INSERT INTO cards (number,bank_id, cvv, nip, expiration_date, balance,type,try, expired) VALUES ("{tarjeta}",{banco}, {cvv}, {nip}, "{expiration_date}", {balance}, "{type}", 0)"#, ),
+                            r#"INSERT INTO cards (number,bank_id, cvv, nip, expiration_date, balance, type,try, expired) VALUES ("{tarjeta}",{banco}, {cvv}, {nip},"{expiration_date}",{balance},"{rtype}", 0, 0)"#, ),
                     ).execute(connection).await?;
-
-
-
 
 
             },
@@ -232,7 +230,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
 #[tokio::main]
 async fn main() {
-    let connection = MySqlPool::connect("mysql://suadmin:1234@201.145.156.9/banco").await.unwrap();
+    let connection = MySqlPool::connect("mysql://root:1234@localhost/banco").await.unwrap();
     let mut atm = get_atm(&connection).await.unwrap();
 
     println!("{atm:?}");

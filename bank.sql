@@ -222,4 +222,12 @@ CREATE TRIGGER `set_date_with` BEFORE INSERT ON `withdrawals` FOR EACH ROW SET N
 ;;
 delimiter ;
 
+
+drop user if exists suadmin@'%';
+use banco;
+create user suadmin@'%'
+    identified by '1234';
+
+GRANT ALL PRIVILEGES ON * TO suadmin@'%';
+
 SET FOREIGN_KEY_CHECKS = 1;

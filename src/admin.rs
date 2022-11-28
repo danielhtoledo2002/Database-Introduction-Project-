@@ -238,11 +238,13 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                 ).execute(connection).await?;
             },
             Opcion::AgregarDineroAtm => {
+                let mut dinero_total =  0.;
                 let atm = loop {
                     let atm = input("Ingrese el nombre del cajero que desea agregarle dinero: ")?;
                     let q = format!("select * from atms where name = '{atm}'");
                     let mut registrar = make_query::<Atm>(&q, connection).await?;
                     if registrar.len() == 1 {
+                        dinero_total = registrar[0].money;
                         break atm;
                     }else {
                         println!("No existe el cajero");
@@ -262,14 +264,16 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                     if dinero >= 0. && dinero < 200000.  {
                         break dinero;
                     } else {
-                        println!("Ingresa un número mayor a 0");
+                        println!("Ingresa un número mayor a 0 o menor a 200000");
                         continue
                     }
 
                 };
+                dinero_total = dinero_total + dinero;
+
                 let _ = sqlx::query(
                     &format!(
-                        r#"UPDATE atms SET money = {dinero} WHERE name = "{atm}" "#, ),
+                        r#"UPDATE atms SET money = {dinero_total} WHERE name = "{atm}" "#, ),
                 ).execute(connection).await?;
 
             },

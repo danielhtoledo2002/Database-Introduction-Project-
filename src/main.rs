@@ -127,6 +127,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
             continue;
         };
 
+
         match opcion {
             Opcion::ConsultarSaldo => {
                 if card.r#type == "Debit" {

@@ -116,7 +116,7 @@ fn elegir_dinero() -> Result<MoneyOptions> {
 async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
     let mut card = iniciar_sesion(connection).await?;
-    println!("Result2: {:#?}", card);
+
     println!("Bienvenido");
     loop {
         let opcion =  menu();
@@ -346,8 +346,6 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 async fn main() {
     let connection = MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap();
     let mut atm = get_atm(&connection).await.unwrap();
-
-    println!("{atm:?}");
 
     loop {
         match app(&mut atm, &connection).await {

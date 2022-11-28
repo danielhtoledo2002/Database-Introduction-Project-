@@ -287,8 +287,6 @@ async fn main() {
     let connection = MySqlPool::connect("mysql://suadmin:1234@localhost/banco").await.unwrap();
     let mut atm = get_atm(&connection).await.unwrap();
 
-    println!("{atm:?}");
-
     loop {
         match app(&mut atm, &connection).await {
             Err(error) => {

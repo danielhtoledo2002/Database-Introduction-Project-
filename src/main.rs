@@ -187,7 +187,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                     let dinero_credito = deudas[0].deuda + opcion + (opcion*0.03);
                     if dinero_credito >= 0. && dinero_credito <= card.balance {
                         let _ = sqlx::query(
-                            &format!(r#"UPDATE deudas SET deuda = {dinero_credito} WHERE name = "{}""#, atm.name),
+                            &format!(r#"UPDATE deudas SET deuda = {dinero_credito} WHERE number = "{}""#, card.number),
                         ).execute(connection).await?;
                         let _ = sqlx::query(
                             &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
@@ -229,7 +229,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         let dinero_deuda = deudas[0].deuda - opcion as i32 as f64;
                         if dinero_deuda >= 0. {
                             let _ = sqlx::query(
-                                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE name = "{}""#, card.number),
+                                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE number = "{}""#, card.number),
                             ).execute(connection).await?;
                             let _ = sqlx::query(
                                 &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
@@ -298,7 +298,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         break;
                     } else {
                         let deudas = make_query::<Deuda>(
-                            format!("Select * from deudas where number = {}",target.number),
+                            format!("Select * from deudas where number = {}", target.number),
                             connection
                         ).await?;
 
@@ -309,13 +309,15 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                             deudas.into_iter().next().unwrap()
                         };
 
-                        let dinero_deuda = deuda.deuda + opcion;
-                        if dinero_deuda >= 0. && dinero_deuda <= card.balance {
+                        let dinero_deuda = deuda.deuda - opcion;
+                        println!("{} | {dinero_deuda} : {} - {}", target.balance, deuda.deuda, opcion);
+
+                        if dinero_deuda >= 0. && dinero_deuda <= target.balance {
                             let _ = sqlx::query(
                                 &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
                             ).execute(connection).await?;
                             let _ = sqlx::query(
-                                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE name = "{}""#, target.number),
+                                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE number = "{}""#, target.number),
                             ).execute(connection).await?;
                             let _ = sqlx::query(
                                 &format!(r#"INSERT INTO transfers (amount, sent_money, received_money) VALUES ({}, "{}","{}")"#, opcion, card.number, target.number),
@@ -342,7 +344,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
 #[tokio::main]
 async fn main() {
-    let connection = MySqlPool::connect("mysql://root:1234@localhost/banco").await.unwrap();
+    let connection = MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap();
     let mut atm = get_atm(&connection).await.unwrap();
 
     println!("{atm:?}");

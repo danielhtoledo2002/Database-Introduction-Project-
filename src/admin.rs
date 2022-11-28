@@ -212,12 +212,6 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         &format!(
                             r#"INSERT INTO cards (number,bank_id, cvv, nip, expiration_date, balance, type,try, expired) VALUES ("{tarjeta}",{banco}, {cvv}, {nip},"{expiration_date}",{balance},"{rtype}", 0, 0)"#, ),
                     ).execute(connection).await?;
-
-                    let _ = sqlx::query(
-                        &format!(
-                            r#"INSERT INTO deudas (number, type, deuda) VALUES ("{tarjeta}","{rtype}", 0)"#, ),
-                    ).execute(connection).await?;
-
                 }
 
 
@@ -290,7 +284,7 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
 #[tokio::main]
 async fn main() {
-    let connection = MySqlPool::connect("mysql://root:1234@localhost/banco").await.unwrap();
+    let connection = MySqlPool::connect("mysql://suadmin:1234@localhost/banco").await.unwrap();
     let mut atm = get_atm(&connection).await.unwrap();
 
     println!("{atm:?}");

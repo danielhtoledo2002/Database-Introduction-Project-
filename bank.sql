@@ -340,7 +340,7 @@ CREATE TABLE `deudas` (
     `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
     `number` varchar(16) NOT NULL,
     `type` varchar(10) NOT NULL,
-    `deuda` float NOT NULL,
+    `deuda` double NOT NULL,
     PRIMARY KEY (`id`),
     KEY `number_deudas_fk` (`number`),
     CONSTRAINT `number_deudas_fk` FOREIGN KEY (`number`) REFERENCES `cards` (`number`)
@@ -417,16 +417,16 @@ COMMIT;
 -- ----------------------------
 DROP TABLE IF EXISTS `transfers`;
 CREATE TABLE `transfers` (
-                             `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-                             `date` date NOT NULL,
-                             `amount` double unsigned NOT NULL,
-                             `sent_money` varchar(16) NOT NULL,
-                             `received_money` varchar(16) NOT NULL,
-                             PRIMARY KEY (`id`),
-                             KEY `rc_money_card` (`received_money`),
-                             KEY `st_money_card` (`sent_money`),
-                             CONSTRAINT `rc_money_card` FOREIGN KEY (`received_money`) REFERENCES `cards` (`number`),
-                             CONSTRAINT `st_money_card` FOREIGN KEY (`sent_money`) REFERENCES `cards` (`number`)
+     `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+     `date` date NOT NULL,
+     `amount` double unsigned NOT NULL,
+     `sent_money` varchar(16) NOT NULL,
+     `received_money` varchar(16) NOT NULL,
+     PRIMARY KEY (`id`),
+     KEY `rc_money_card` (`received_money`),
+     KEY `st_money_card` (`sent_money`),
+     CONSTRAINT `rc_money_card` FOREIGN KEY (`received_money`) REFERENCES `cards` (`number`),
+     CONSTRAINT `st_money_card` FOREIGN KEY (`sent_money`) REFERENCES `cards` (`number`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
@@ -445,16 +445,16 @@ COMMIT;
 -- ----------------------------
 DROP TABLE IF EXISTS `withdrawals`;
 CREATE TABLE `withdrawals` (
-                               `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-                               `amount` double NOT NULL,
-                               `date` date NOT NULL,
-                               `atm_name` varchar(255) NOT NULL,
-                               `card_number` varchar(16) NOT NULL,
-                               PRIMARY KEY (`id`),
-                               KEY `atm_name_fk` (`atm_name`),
-                               KEY `card_number_fk3` (`card_number`),
-                               CONSTRAINT `atm_name_fk` FOREIGN KEY (`atm_name`) REFERENCES `atms` (`name`),
-                               CONSTRAINT `card_number_fk3` FOREIGN KEY (`card_number`) REFERENCES `cards` (`number`)
+   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+   `amount` double NOT NULL,
+   `date` date NOT NULL,
+   `atm_name` varchar(255) NOT NULL,
+   `card_number` varchar(16) NOT NULL,
+   PRIMARY KEY (`id`),
+   KEY `atm_name_fk` (`atm_name`),
+   KEY `card_number_fk3` (`card_number`),
+   CONSTRAINT `atm_name_fk` FOREIGN KEY (`atm_name`) REFERENCES `atms` (`name`),
+   CONSTRAINT `card_number_fk3` FOREIGN KEY (`card_number`) REFERENCES `cards` (`number`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
@@ -532,16 +532,51 @@ CREATE TRIGGER `set_date_with` BEFORE INSERT ON `withdrawals` FOR EACH ROW SET N
 ;;
 delimiter ;
 
+drop user if exists daniel@localhost;
+create user daniel@localhost
+    identified by '1234';
+
+grant select on table cards to daniel@localhost;
+grant update on table cards to daniel@localhost;
+
+grant select on table deudas to daniel@localhost;
+grant update on table deudas to daniel@localhost;
+
+grant insert on table deposits to daniel@localhost;
+
+grant insert on table transfers to daniel@localhost;
+
+grant insert on table withdrawals to daniel@localhost;
+
+grant insert on table atms to daniel@localhost;
+grant update on table atms to daniel@localhost;
+grant select on table atms to daniel@localhost;
+
+drop user if exists suadmin@localhost;
+create user suadmin@localhost
+    identified by '1234';
+
+GRANT ALL PRIVILEGES ON * TO suadmin@localhost;
+
 drop user if exists daniel@'%';
 create user daniel@'%'
     identified by '1234';
 
+grant select on table cards to daniel@'%';
 grant update on table cards to daniel@'%';
+
+grant select on table deudas to daniel@'%';
+grant update on table deudas to daniel@'%';
+
 grant insert on table deposits to daniel@'%';
+
 grant insert on table transfers to daniel@'%';
+
 grant insert on table withdrawals to daniel@'%';
+
 grant insert on table atms to daniel@'%';
 grant update on table atms to daniel@'%';
+grant select on table atms to daniel@'%';
 
 drop user if exists suadmin@'%';
 create user suadmin@'%'

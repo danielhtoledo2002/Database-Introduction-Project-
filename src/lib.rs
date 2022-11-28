@@ -26,6 +26,7 @@ pub struct Card {
 #[derive(Clone)]
 #[derive(Debug, sqlx::FromRow)]
 pub struct Deuda {
+    pub id: u32,
     pub number:String,
     pub r#type:String,
     pub deuda:f64,
@@ -86,6 +87,7 @@ pub async fn get_atm(connection: &sqlx::Pool<MySql>) -> Result<Atm> {
         let mut result = make_query::<Atm>(&q, connection).await;
 
         let result = if result.is_err() {
+            println!("Error: {:?}", result.unwrap_err());
             let insert_q = format!("insert into atms (name, address, bank_id , money)
 values ('{addr}', 'Oso 81, Col del Valle Centro, Benito Juárez, 03100 Ciudad de México, CDMX', 2
 , 200000.0)");

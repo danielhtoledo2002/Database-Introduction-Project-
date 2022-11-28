@@ -23,6 +23,13 @@ pub struct Card {
     pub expired:bool,
     pub r#try:u32,
 }
+#[derive(Clone)]
+#[derive(Debug, sqlx::FromRow)]
+pub struct Deuda {
+    pub number:String,
+    pub r#type:String,
+    pub deuda:f64,
+}
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct Atm {
@@ -65,7 +72,7 @@ pub async fn make_query_expect_empty<T>(query: impl AsRef<str>, connection: &sql
         .await ?;
 
     if !result.is_empty() {
-        Err(anyhow!("No se encontró ningún dato"))
+        Err(anyhow!("Se encontró uno o más datos"))
     } else {
         Ok(result)
     }

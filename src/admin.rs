@@ -1,3 +1,4 @@
+use std::error;
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Pool};
 use text_io::{try_read};
@@ -11,7 +12,7 @@ enum Opcion {
     DesbloquearTarjeta,
     RegistrarTarjeta,
     RegistrarBanco,
-    AgregarDineroBanco,
+    AgregarDineroAtm,
     Salir
 }
 
@@ -24,7 +25,7 @@ impl TryFrom<u8> for Opcion {
             x if x == 2 => BloquearTarjeta,
             x if x == 3 => RegistrarTarjeta,
             x if x == 4 => RegistrarBanco,
-            x if x == 5 => AgregarDineroBanco,
+            x if x == 5 => AgregarDineroAtm,
             x if x == 6 => Salir,
             _ => {
                 return Err(anyhow!("Opción no valida"));
@@ -201,27 +202,86 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         }
                     };
                 println!("{}", rtype);
-
+                if  {rtype == "Debit"} {
+                    let _ = sqlx::query(
+                        &format!(
+                            r#"INSERT INTO cards (number,bank_id, cvv, nip, expiration_date, balance, type,try, expired) VALUES ("{tarjeta}",{banco}, {cvv}, {nip},"{expiration_date}",{balance},"{rtype}", 0, 0)"#, ),
+                    ).execute(connection).await?;
+                }else {
                     let _ = sqlx::query(
                         &format!(
                             r#"INSERT INTO cards (number,bank_id, cvv, nip, expiration_date, balance, type,try, expired) VALUES ("{tarjeta}",{banco}, {cvv}, {nip},"{expiration_date}",{balance},"{rtype}", 0, 0)"#, ),
                     ).execute(connection).await?;
 
+                    let _ = sqlx::query(
+                        &format!(
+                            r#"INSERT INTO deudas (number, type, deuda) VALUES ("{tarjeta}","{rtype}", 0)"#, ),
+                    ).execute(connection).await?;
+
+                }
+
+
+
 
             },
             Opcion::RegistrarBanco => {
-                let banco = input("Ingrese el banco que desea registrar: ")?;
 
+                let banco = loop {
+                    let banco = input("Ingrese el nombre del banco que desea agregar: ")?;
+                    let q = format!("select * from bancos where name = '{banco}'");
+                    let mut registrar = make_query_expect_empty::<Banco>(&q, connection).await;
+                    if let Err(registrar) = registrar {
+                        println!("Ya existe el banco");
+                        continue;
+                    } else {
+                        break banco
+                    }
+                };
+
+                let _ = sqlx::query(
+                    &format!(
+                        r#"INSERT INTO bancos (name) VALUES ("{banco}")"#, ),
+                ).execute(connection).await?;
             },
-            Opcion::AgregarDineroBanco => {
-                let banco = input("Ingrese el banco que desea agregar dinero: ")?;
+            Opcion::AgregarDineroAtm => {
+                let atm = loop {
+                    let atm = input("Ingrese el nombre del cajero que desea agregarle dinero: ")?;
+                    let q = format!("select * from atms where name = '{atm}'");
+                    let mut registrar = make_query::<Atm>(&q, connection).await?;
+                    if registrar.len() == 1 {
+                        break atm;
+                    }else {
+                        println!("No existe el cajero");
+                        continue;
+                    }
+
+                };
+                let dinero = loop {
+                    let dinero: Result<f64, _> = input("Ingrese el dinero: ")?.parse();
+                    let dinero: f64 = if let Err(e) =  dinero {
+                        println!("Error: {}", e);
+                        continue;
+                    } else {
+                        dinero.unwrap()
+                    };
+
+                    if dinero >= 0. && dinero < 200000.  {
+                        break dinero;
+                    } else {
+                        println!("Ingresa un número mayor a 0");
+                        continue
+                    }
+
+                };
+                let _ = sqlx::query(
+                    &format!(
+                        r#"UPDATE atms SET money = {dinero} WHERE name = "{atm}" "#, ),
+                ).execute(connection).await?;
 
             },
             Opcion::Salir => {
                 break;
             }
-
-
         }
     }
 
@@ -240,7 +300,7 @@ async fn main() {
             Err(error) => {
                 println!("Error: {}", error);
             },
-            Ok(_) => {}
+            Ok(_) => {break;}
         }
     }
 }

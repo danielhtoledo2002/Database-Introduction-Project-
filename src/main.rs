@@ -2,6 +2,7 @@ use sqlx::mysql::MySqlPool;
 use sqlx::MySql;
 use text_io::{try_read};
 use anyhow::{Result, Error, anyhow};
+use tokio::time::error::Elapsed;
 
 use lib::*;
 
@@ -128,14 +129,37 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
         match opcion {
             Opcion::ConsultarSaldo => {
-                println!("El dinero en la cuenta es {} $ pesos", card.balance);
+                if card.r#type == "Debit" {
+                    println!("El dinero en la cuenta es {} $ pesos", card.balance);
+                } else {
+                    let deudas = make_query::<Deuda>(
+                        format!("Select * from deudas where number = {}",card.number),
+                        connection
+                    ).await?;
+
+                    let deuda = if deudas.len() != 1 {
+                        println!("Ocurrió un error al leer la deuda");
+                        continue;
+                    } else {
+                        deudas.into_iter().next().unwrap()
+                    };
+
+                    println!("Su crédito restante es {}-{} = {}", card.balance, deuda.deuda, card.balance-deuda.deuda);
+                }
             },
             Opcion::RetirarEfectivo => {
-                let opcion = elegir_dinero()?;
+                let opcion = elegir_dinero()? as i32 as f64;
 
-                let dinero = card.balance - opcion as i32 as f64;
-                let atm_dinero = atm.money - opcion as i32 as f64;
-                if dinero >= 0.  && atm_dinero >= 0. {
+                let dinero = card.balance - opcion;
+
+                let atm_dinero = atm.money - opcion;
+
+                if !(dinero >= 0.  && atm_dinero >= 0.) {
+                    println!("No tienes suficiente dinero");
+                    continue
+                }
+
+                if card.r#type == "Debit" {
                     let _ = sqlx::query(
                         &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
                     ).execute(connection).await?;
@@ -143,14 +167,39 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
                     ).execute(connection).await?;
                     let _ = sqlx::query(
-                         &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm.name, card.number),
+                        &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm.name, card.number),
                     ).execute(connection).await?;
 
                     card.balance = dinero;
                     atm.money = atm_dinero;
                     println!("Retiro exitoso {}", card.balance);
                 } else {
-                    println!("No tienes suficiente dinero");
+                    let deudas = make_query::<Deuda>(
+                        format!("Select * from deudas where number = {}",card.number),
+                        connection
+                    ).await?;
+
+                    if deudas.len() != 1 {
+                        println!("No encontró la tarjeta");
+                        continue
+                    }
+
+                    let dinero_credito = deudas[0].deuda + opcion + (opcion*0.03);
+                    if dinero_credito >= 0. && dinero_credito <= card.balance {
+                        let _ = sqlx::query(
+                            &format!(r#"UPDATE deudas SET deuda = {dinero_credito} WHERE name = "{}""#, atm.name),
+                        ).execute(connection).await?;
+                        let _ = sqlx::query(
+                            &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
+                        ).execute(connection).await?;
+                        let _ = sqlx::query(
+                            &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm.name, card.number),
+                        ).execute(connection).await?;
+
+                    } else {
+                        println!("No tienes deuda o saldo mayor al que hay que pagar");
+                        break
+                    }
                 }
 
             },
@@ -158,29 +207,62 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                 let opcion = elegir_dinero()?;
                 let dinero = card.balance + opcion as i32 as f64;
                 let atm_dinero = atm.money + opcion as i32 as f64;
-                let _ = sqlx::query(
-                    &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
-                ).execute(connection).await?;
-                let _ = sqlx::query(
-                    &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
-                ).execute(connection).await?;
-                let _ = sqlx::query(
-                    &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opcion as i32,card.number ,atm.name),
-                ).execute(connection).await?;
-                card.balance = dinero;
-                atm.money = atm_dinero;
-                println!("Deposito exitoso {} ", card.balance);
+                if card.r#type == "Debit" {
+                    let _ = sqlx::query(
+                        &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
+                    ).execute(connection).await?;
+                    let _ = sqlx::query(
+                        &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
+                    ).execute(connection).await?;
+                    let _ = sqlx::query(
+                        &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opcion as i32,card.number ,atm.name),
+                    ).execute(connection).await?;
+                    card.balance = dinero;
+                    atm.money = atm_dinero;
+                    println!("Deposito exitoso {} ", card.balance);
+                }else {
+                    let mut deudas = make_query::<Deuda>(
+                        format!("Select * from deudas where number = {}",card.number),
+                        connection
+                    ).await?;
+                    if deudas.len() == 1 {
+                        let dinero_deuda = deudas[0].deuda - opcion as i32 as f64;
+                        if dinero_deuda >= 0. {
+                            let _ = sqlx::query(
+                                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE name = "{}""#, card.number),
+                            ).execute(connection).await?;
+                            let _ = sqlx::query(
+                                &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
+                            ).execute(connection).await?;
+                            let _ = sqlx::query(
+                                &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opcion as i32,card.number ,atm.name),
+                            ).execute(connection).await?;
+                            deudas[0].deuda = dinero_deuda;
+
+                        }
+                        else {
+                            println!("No tienes deuda o saldo mayor al que hay que pagar");
+                            break
+                        }
+                    }else {
+                        println!("No encontró la tarjeta");
+                    }
+                }
             },
 
             Opcion::TransferirEfectivo => {
                 loop {
+                    if card.r#type == "Credit" {
+                        println!("No puedes realizar esta operación con una tarjeta de crédito");
+                        continue;
+                    }
+
                     let numero_tarjeta = input("Ingresa el número de la tarjeta: ")?;
 
                     if numero_tarjeta == card.number {
                         println!("No puedes transferirte a ti mismo");
                         continue;
                     }
-
                     let q = format!("select * from cards where number = '{numero_tarjeta}'");
                     let mut target = make_query::<Card>(&q, connection).await;
 
@@ -191,28 +273,61 @@ async fn app(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                         continue;
                     };
 
+                    let target = if target.len() != 1  {
+                        println!("No existe la tarjeta");
+                        continue;
+                    } else {
+                        target.into_iter().next().unwrap()
+                    };
 
-                    if target.len() == 1  {
-                        let opcion = elegir_dinero()?;
-                        let dinero = card.balance - opcion as i32 as f64;
-                        if dinero > 0. && card.r#type == "Debit"{
+                    let opcion = elegir_dinero()? as i32 as f64;
+                    let dinero = card.balance - opcion;
+
+                    if target.r#type == "Debit" {
+                        let _ = sqlx::query(
+                            &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
+                        ).execute(connection).await?;
+                        let _ = sqlx::query(
+                            &format!(r#"UPDATE cards SET balance = {} WHERE number = {}"#, target.balance + opcion, target.number),
+                        ).execute(connection).await?;
+                        let _ = sqlx::query(
+                            &format!(r#"INSERT INTO transfers (amount, sent_money, received_money) VALUES ({}, "{}","{}")"#, opcion, card.number, target.number),
+                        ).execute(connection).await?;
+                        card.balance = dinero;
+                        println!("Transferencia exitosa {} ", card.balance);
+                        break;
+                    } else {
+                        let deudas = make_query::<Deuda>(
+                            format!("Select * from deudas where number = {}",target.number),
+                            connection
+                        ).await?;
+
+                        let mut deuda = if deudas.len() != 1 {
+                            println!("No encontró la tarjeta");
+                            continue;
+                        } else {
+                            deudas.into_iter().next().unwrap()
+                        };
+
+                        let dinero_deuda = deuda.deuda + opcion;
+                        if dinero_deuda >= 0. && dinero_deuda <= card.balance {
                             let _ = sqlx::query(
                                 &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
                             ).execute(connection).await?;
                             let _ = sqlx::query(
-                                &format!(r#"UPDATE cards SET balance = {} WHERE number = {}"#, target[0].balance + opcion as i32 as f64, target[0].number),
+                                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE name = "{}""#, target.number),
                             ).execute(connection).await?;
                             let _ = sqlx::query(
-                                &format!(r#"INSERT INTO transfers (amount, sent_money, received_money) VALUES ({}, "{}","{}")"#, opcion as i32, card.number, target[0].number),
+                                &format!(r#"INSERT INTO transfers (amount, sent_money, received_money) VALUES ({}, "{}","{}")"#, opcion, card.number, target.number),
                             ).execute(connection).await?;
-                            card.balance = dinero;
+                            deuda.deuda = dinero_deuda;
                             println!("Transferencia exitosa {} ", card.balance);
                             break;
-                        }else{
-                            println!("No tienes suficiente dinero");
                         }
-                    }else {
-                        println!("No existe la tarjeta");
+                        else {
+                            println!("No tienes deuda o saldo mayor al que hay que pagar");
+                            break
+                        }
                     }
                 }
             },

@@ -4,7 +4,7 @@ I use sql to design a database to use in atm machine.
 ![image](https://user-images.githubusercontent.com/92064764/204880114-458ffd65-e28d-4f82-aab1-ae64acb39a5f.png)
 
 # SQLX 
-I use sqlx to update the database.
+I use sqlx to update the database usign this two functions.
 ```Rust
 pub async fn make_query<T>(query: impl AsRef<str>, connection: &sqlx::Pool<MySql>) -> Result<Vec<T>>
     where for<'a> T: sqlx::FromRow<'a, sqlx::mysql::MySqlRow> + Send + Unpin

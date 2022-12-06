@@ -4,15 +4,13 @@ use text_io::{try_read};
 use anyhow::{Result, Error, anyhow};
 use tokio::time::error::Elapsed;
 use dioxus::prelude::*;
-use axum::{Router, Server, routing::{get, post}, response::Html, Form};
 use std::net::SocketAddr;
 use lib::*;
-use tower_http::services::ServeDir;
-use axum::error_handling::HandleError;
-use axum::http::StatusCode;
 use serde::Deserialize;
-use std::sync::Arc;
-use axum::response::IntoResponse;
+use std::sync::{Arc, Mutex};
+use std::thread::sleep;
+use std::time::Duration;
+use dioxus::events::onchange;
 
 #[derive(Debug)]
 #[derive(Clone, Copy)]
@@ -39,13 +37,9 @@ struct SignIn {
     password:String,
 }
 
-async fn verification_login(Form(datos) : Form<SignIn>, estado: Arc<Estado>) -> Html<String> {
-    Html(format!("{}:{}", datos.user, datos.password))
-}
 
-async fn iniciar_sesion(connection: &sqlx::Pool<MySql>) -> Result<Card> {
-    let tarjeta = input("Ingrese el número de tarjeta: ")?;
-    let nip = input("Ingrese el nip: ")?;
+async fn iniciar_sesion(connection: &sqlx::Pool<MySql>, tarjeta: &str, nip: &str) -> Result<Card> {
+
 
     let query = format!(r#"select * from cards where number = "{tarjeta}" and nip = "{nip}" "# );
     let cartas =  make_query::<Card>(query, connection).await?;
@@ -65,8 +59,8 @@ async fn iniciar_sesion(connection: &sqlx::Pool<MySql>) -> Result<Card> {
 
 async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
-    let mut card = iniciar_sesion(connection).await?;
 
+    let mut card = iniciar_sesion(connection, "", "").await?;
     println!("Bienvenido");
     loop {
         let opcion =  menu();
@@ -359,51 +353,86 @@ fn elegir_dinero() -> Result<MoneyOptions> {
     Ok(opcion)
 }
 
+
 fn Main(cx: Scope) -> Element{
-    let script = r#"
-    function post(path, params, method='post') {
+    let connection: &UseState<Arc<Mutex<MySqlPool>>>;
+    let atm: &UseState<Arc<Mutex<Atm>>>;
+    let card : &UseState<Option<Card>> = use_state(&cx, || None);
 
-  // The rest of this code assumes you are not using a library.
-  // It can be made less verbose if you use one.
-  const form = document.createElement('form');
-  form.method = method;
-  form.action = path;
+    let future = use_future(&cx, (), |()|  async move {
+        let connection = MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap();
+        let atmm = get_atm(&connection).await.unwrap();
+        (Arc::new(Mutex::new(connection)), Arc::new(Mutex::new(atmm)))
+    });
 
-  for (const key in params) {
-    if (params.hasOwnProperty(key)) {
-      const hiddenField = document.createElement('input');
-      hiddenField.type = 'hidden';
-      hiddenField.name = key;
-      hiddenField.value = params[key];
 
-      form.appendChild(hiddenField);
+    match future.value() {
+        Some((con, atmm)) => {
+            connection =  use_state(&cx, || Arc::clone(con));
+            atm =  use_state(&cx, || Arc::clone(atmm));
+
+            cx.render(rsx!{
+                Router {
+                    Route { to: "/", Login { card: card.clone() } }
+                    Route { to: "/user", Vacio { card: card.clone() } }
+                }
+            })
+        },
+        None => { cx.render(rsx!{ "Nada" }) },
     }
-  }
 
-  document.body.appendChild(form);
-  form.submit();
 }
 
-document.addEventListener("DOMContentLoaded", function(event) {
-   var form = document.getElementById("myForm");
-   function handleForm(event) {
-        event.preventDefault();
+#[inline_props]
+fn Vacio(cx: Scope, card: UseState<Option<Card>>) -> Element {
+    cx.render(rsx!{
+        p { "Iniciado!" }
+        card.get().is_some().then(|| {
+            rsx!{
+                p {
+                    [format_args!("{:?}", card.get().iter().next().unwrap())]
+                }
+            }
+        })
 
-        var user = document.getElementById("user").value;
-        var password = document.getElementById("password").value;
+    })
+}
 
-        post("/login", {user: user, password: password});
+#[inline_props]
+fn Logger(cx: Scope, card: UseState<Option<Card>>, user: String, password: String) -> Element {
+    let future = use_future(&cx, (user, password), |(user, password)|  async move {
+        let connection = MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap();
+        iniciar_sesion(&connection, &user, &password).await
+    });
+    let router = use_router(&cx);
+
+
+    match future.value() {
+        Some(Ok(cardf)) => {
+            card.set(Some(cardf.clone()));
+            router.push_route("/user", None, None);
+
+            cx.render(rsx!{ Link {
+        to: "/user",
+        active_class: "is-active",  // Only for this Link. Overwrites "custom-active" from Router.
+        "User"
+    } }) },
+        Some(Err(err)) => { cx.render(rsx!{ "Error" }) },
+        None => { cx.render(rsx!{ "Nada" }) },
     }
-   form.addEventListener('submit', handleForm);
-});
-    "#;
+}
+
+#[inline_props]
+fn Login(cx: Scope, card: UseState<Option<Card>>, ) -> Element {
+
+    let user: &UseState<String> = use_state(&cx, || "".to_owned());
+    let password: &UseState<String> = use_state(&cx, || "".to_owned());
+    let try_log: &UseState<bool> = use_state(&cx, || false);
+
     cx.render(rsx! {
         link {
             rel:"stylesheet",
             href:"/static/tailwindcss.css"
-        },
-        script {
-            dangerous_inner_html: "{script}"
         },
         section { class: "h-screen",
         div { class: "px-6 h-full text-gray-800",
@@ -417,24 +446,28 @@ document.addEventListener("DOMContentLoaded", function(event) {
                 div { class: "xl:ml-20 xl:w-5/12 lg:w-5/12 md:w-8/12 mb-12 md:mb-0",
                     form {
                         id: "myForm",
-                        action: "/login",
-                        method: "post",
                         /* Email input */
                         div { class: "mb-6",
                             input { class: "form-control block w-full px-4 py-2 text-xl font-normal text-gray-700 bg-white bg-clip-padding border border-solid border-gray-300 rounded transition ease-in-out m-0 focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none",
-                                id: "user",
+                                value: "{user}",
                                 name: "user",
                                 r#type: "text",
                                 placeholder: "Email address",
+                                onchange: |evt| {
+                                    user.set(evt.value.clone());
+                                }
                             }
                         }
                         /* Password input */
                         div { class: "mb-6",
                             input { class: "form-control block w-full px-4 py-2 text-xl font-normal text-gray-700 bg-white bg-clip-padding border border-solid border-gray-300 rounded transition ease-in-out m-0 focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none",
-                                id: "password",
-                                r#type: "password",
+                                value: "{password}",
+                                    r#type: "password",
                                 name: "password",
                                 placeholder: "Password",
+                                onchange: |evt| {
+                                    password.set(evt.value.clone());
+                                }
                             }
                         }
                         div { class: "flex justify-between items-center mb-6",
@@ -455,9 +488,18 @@ document.addEventListener("DOMContentLoaded", function(event) {
                         }
                         div { class: "text-center lg:text-left",
                             button { class: "inline-block px-7 py-3 bg-blue-600 text-white font-medium text-sm leading-snug uppercase rounded shadow-md hover:bg-blue-700 hover:shadow-lg focus:bg-blue-700 focus:shadow-lg focus:outline-none focus:ring-0 active:bg-blue-800 active:shadow-lg transition duration-150 ease-in-out",
-                                r#type: "submit",
-                                "Login"
-                            }
+                                prevent_default: "onclick",
+                                    onclick: move |evt| {
+                                        try_log.set(true);
+                                    },
+
+                                    "Login"
+                            },
+                                {
+                                    try_log.then(|| {
+                                        rsx! { Logger { card: card.clone(), user: user.get().to_owned(), password: password.get().to_owned() } }
+                                    })
+                                },
                             p { class: "text-sm font-semibold mt-2 pt-1 mb-0",
                                 "Don't have an account?"
                                 a { class: "text-red-600 hover:text-red-700 focus:text-red-700 transition duration-200 ease-in-out",
@@ -473,13 +515,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
         }
     })
 }
-async fn render_login() -> Html<String> {
-
-    let mut vdom = VirtualDom::new(Main);
-    let _ = vdom.rebuild();
-    let string = dioxus::ssr::render_vdom(&vdom);
-    Html(string)
-}
 
 
 
@@ -491,33 +526,6 @@ struct Estado {
 #[tokio::main]
 async fn main() {
 
-    let connection = MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap();
-    let atm = get_atm(&connection).await.unwrap();
 
-    let estado_compartido = Arc::new(Estado {
-        connection,
-        atm
-    });
-
-    let servicio_archivos = HandleError::new(ServeDir::new("./static"), not_found);
-
-    async fn not_found(err: std::io::Error) -> (StatusCode, String) {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Something went wrong: {}", err),
-        )
-    }
-
-    let app = Router::new()
-        .nest_service("/static", servicio_archivos)
-        .route("/login",get(render_login).post({
-            let estado = Arc::clone(&estado_compartido);
-            move |datos| verification_login(datos, estado)
-        }))
-    ;
-    let adrr = SocketAddr::from(([127, 0, 0, 1], 80));
-    axum::Server::bind(&adrr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    dioxus::desktop::launch(Main)
 }

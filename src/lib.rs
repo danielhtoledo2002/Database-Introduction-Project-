@@ -11,7 +11,7 @@ pub struct Banco {
 }
 
 #[derive(Clone)]
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, PartialEq, PartialOrd)]
 pub struct Card {
     pub number:String,
     pub bank_id:u32,

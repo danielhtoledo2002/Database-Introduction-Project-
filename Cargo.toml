@@ -22,5 +22,5 @@ text_io = "0.1.10"
 anyhow = "1.0.66"
 mac_address = "1.1.4"
 time = { version = "0.3.17", features = ["formatting", "macros"] }
-dioxus = {version = "0.2.4", features = ["desktop", "router"]}
+dioxus = {version = "0.2.4", features = ["desktop", "router", "ssr"]}
 serde = "1.0.148"

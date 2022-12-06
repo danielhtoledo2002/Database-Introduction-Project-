@@ -1,5 +1,5 @@
 use sqlx::mysql::MySqlPool;
-use sqlx::MySql;
+use sqlx::{Connection, MySql};
 use text_io::{try_read};
 use anyhow::{Result, Error, anyhow};
 use tokio::time::error::Elapsed;
@@ -56,14 +56,21 @@ async fn iniciar_sesion(connection: &sqlx::Pool<MySql>, tarjeta: &str, nip: &str
         Ok(tarjeta)
     }
 }
-
+// me hizo falta ifs
+async fn consultar_saldo(connection: &sqlx::Pool<MySql>, tarjeta: &str) -> Result<f64> {
+    let deudas = make_query::<Deuda>(
+        format!("Select * from deudas where number = {}",tarjeta),
+        connection).await?;
+    let x: f64 = deudas[0].deuda;
+    Ok(x)
+}
+/*
 async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
 
     let mut card = iniciar_sesion(connection, "", "").await?;
     println!("Bienvenido");
     loop {
-        let opcion =  menu();
         let opcion = if let Ok(op) = opcion {
             op
         } else {
@@ -74,23 +81,7 @@ async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
 
         match opcion {
             Opcion::ConsultarSaldo => {
-                if card.r#type == "Debit" {
-                    println!("El dinero en la cuenta es {} $ pesos", card.balance);
-                } else {
-                    let deudas = make_query::<Deuda>(
-                        format!("Select * from deudas where number = {}",card.number),
-                        connection
-                    ).await?;
-
-                    let deuda = if deudas.len() != 1 {
-                        println!("Ocurrió un error al leer la deuda");
-                        continue;
-                    } else {
-                        deudas.into_iter().next().unwrap()
-                    };
-
-                    println!("Su crédito restante es {}-{} = {}", card.balance, deuda.deuda, card.balance-deuda.deuda);
-                }
+               break;
             },
             Opcion::RetirarEfectivo => {
                 let opcion = elegir_dinero()? as i32 as f64;
@@ -285,7 +276,7 @@ async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
     }
     Ok(())
 }
-
+*/
 impl TryFrom<u8> for MoneyOptions {
     type Error = Error;
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
@@ -321,17 +312,6 @@ impl TryFrom<u8> for Opcion {
         };
         Ok(tipo)
     }
-}
-
-fn menu() -> Result<Opcion> {
-    println!("1. Consultar saldo");
-    println!("2. Retirar efectivo");
-    println!("3. Depositar efectivo");
-    println!("4. Transferir efectivo");
-    println!("5. Salir");
-
-    let opcion: u8 = input("Elige una opción: ")?.parse()?;
-    Opcion::try_from(opcion)
 }
 
 fn elegir_dinero() -> Result<MoneyOptions> {
@@ -375,26 +355,88 @@ fn Main(cx: Scope) -> Element{
                 Router {
                     Route { to: "/", Login { card: card.clone() } }
                     Route { to: "/user", Vacio { card: card.clone() } }
+                    Route{to: "/consult", Consulta { card: card.clone()} }
                 }
             })
         },
-        None => { cx.render(rsx!{ "Nada" }) },
+        None => { None },
+    }
+}
+//aqui queria o en otra funcion mandar a llamar la funcion que esta arriba pero no se como hacerlo se llama consultar_salo pero solo seria para las de credito
+// igual pense en que chcance cuando inicie seción ya haga ese desmadre pero no esatba seguro
+#[inline_props]
+fn Consulta (cx: Scope, card: UseState<Option<Card>>, )-> Element{
+    if card.get().iter().next().unwrap().r#type == "Credit" {
     }
 
+    cx.render(rsx! {
+        link {
+            rel:"stylesheet",
+            href:"/static/tailwindcss.css"
+        },
+
+            p { "Saldo" }
+            card.get().is_some().then(|| {
+                rsx!{
+                    p {
+                    //esto solo es para las de debito
+                        [format_args!("Su saldo es  {:?} $ ", card.get().iter().next().unwrap().balance)]
+                    }
+                }
+            })
+        })
 }
 
 #[inline_props]
 fn Vacio(cx: Scope, card: UseState<Option<Card>>) -> Element {
     cx.render(rsx!{
-        p { "Iniciado!" }
-        card.get().is_some().then(|| {
-            rsx!{
-                p {
-                    [format_args!("{:?}", card.get().iter().next().unwrap())]
+        link {
+            rel:"stylesheet",
+            href:"/static/tailwindcss.css"
+        },
+        div {
+            p { "Menu!" }
+            card.get().is_some().then(|| {
+                rsx!{
+                    p {
+                        [format_args!("Card: {:?}", card.get().iter().next().unwrap().number)]
+                    }
                 }
-            }
-        })
+            })
 
+            div {
+               class: "flex flex-col items-center",
+                div {
+                    class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                        Link {
+                            to: "/consult",
+                            "1. Consultar saldo"
+                        },
+                    },
+                     div {
+                    class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                    Link {
+
+                        to: "/withdrawal",
+                        "2. Retirar efectivo"
+                    },
+                        },
+                     div {
+                    class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                    Link {
+                         to: "/deposit",
+                        "3. Depositar efectivo"
+                    },
+                        },
+                     div {
+                    class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                     Link {
+                         to: "/transfer",
+                        "4. Transferir efectivo"
+                    },
+                        }
+            }
+        }
     })
 }
 
@@ -526,6 +568,9 @@ struct Estado {
 #[tokio::main]
 async fn main() {
 
+    let vdom = VirtualDom::new(Main);
+    let content = dioxus::ssr::render_vdom_cfg(&vdom, |f| f.pre_render(true));
 
-    dioxus::desktop::launch(Main)
+    dioxus::desktop::launch_cfg(Main, |c| c.with_prerendered(content));
+
 }

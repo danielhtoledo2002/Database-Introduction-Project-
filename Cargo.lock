@@ -495,6 +495,7 @@ dependencies = [
  "dioxus-hooks",
  "dioxus-html",
  "dioxus-router",
+ "dioxus-ssr",
 ]
 
 [[package]]
@@ -595,6 +596,15 @@ dependencies = [
  "serde_urlencoded",
  "thiserror",
  "url",
+]
+
+[[package]]
+name = "dioxus-ssr"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51a706f1a2ee0306c36f01183be627201e98919f6cf54e44ff3d27318a75b46e"
+dependencies = [
+ "dioxus-core",
 ]
 
 [[package]]

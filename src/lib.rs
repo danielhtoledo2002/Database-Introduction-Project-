@@ -24,7 +24,7 @@ pub struct Card {
     pub r#try:u32,
 }
 #[derive(Clone)]
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, PartialEq, PartialOrd)]
 pub struct Deuda {
     pub id: u32,
     pub number:String,
@@ -63,6 +63,7 @@ pub async fn make_query<T>(query: impl AsRef<str>, connection: &sqlx::Pool<MySql
         Ok(result)
     }
 }
+
 
 
 pub async fn make_query_expect_empty<T>(query: impl AsRef<str>, connection: &sqlx::Pool<MySql>) -> Result<Vec<T>>

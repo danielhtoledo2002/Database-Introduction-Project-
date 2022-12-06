@@ -19,9 +19,12 @@ path = "src/admin.rs"
 sqlx = { version = "0.6.2", features = ["mysql", "runtime-tokio-native-tls", "macros", "time"] }
 tokio = { version = "1.21.2", features = ["full"] }
 text_io = "0.1.10"
-clap = { version = "4.0.24", features = ["derive"] }
 anyhow = "1.0.66"
 mac_address = "1.1.4"
 time = { version = "0.3.17", features = ["formatting", "macros"] }
 dioxus = {version = "0.2.4", features = ["ssr"]}
-axum = "0.6.1"
+axum = { version = "0.6.1", features = ["form"] }
+serde = "1.0.148"
+
+tower = { version = "0.4.13" }
+tower-http = { version = "0.3.5", features = ["fs"]}

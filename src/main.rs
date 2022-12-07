@@ -12,25 +12,23 @@ use std::thread::sleep;
 use std::time::Duration;
 use dioxus::events::onchange;
 
-#[derive(Debug)]
-#[derive(Clone, Copy)]
-enum Opcion {
-    ConsultarSaldo,
-    RetirarEfectivo,
-    DepositarEfectivo,
-    TransferirEfectivo,
-    Salir
+#[derive(Clone, Debug)]
+struct MyPool {
+    connection: MySqlPool
 }
 
-#[derive(Clone, Copy)]
-enum MoneyOptions {
-    Q100    = 100,
-    Q200    = 200,
-    Q500    = 500,
-    Q1000   = 1000,
-    Q2000   = 2000,
-    Q4000   = 4000,
+impl PartialEq for MyPool {
+    fn eq(&self, other: &Self) -> bool {
+        let a = format!{"{:?}", self.connection} == format!{"{:?}", other.connection};
+        a
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
 }
+
+
 #[derive(Deserialize)]
 struct SignIn {
     user:String,
@@ -39,9 +37,7 @@ struct SignIn {
 
 
 async fn iniciar_sesion(connection: &sqlx::Pool<MySql>, tarjeta: &str, nip: &str) -> Result<Card> {
-
-
-    let query = format!(r#"select * from cards where number = "{tarjeta}" and nip = "{nip}" "# );
+    let query = format!(r#"select * from cards where number = "{}" and nip = "{}" "#, tarjeta, nip );
     let cartas =  make_query::<Card>(query, connection).await?;
 
     let tarjeta = if cartas.len() == 1 {
@@ -61,8 +57,68 @@ async fn consultar_saldo(connection: &sqlx::Pool<MySql>, tarjeta: &str) -> Resul
     let deudas = make_query::<Deuda>(
         format!("Select * from deudas where number = {}",tarjeta),
         connection).await?;
-    let x: f64 = deudas[0].deuda;
-    Ok(x)
+    Ok(deudas[0].deuda)
+}
+async fn retira_dinero(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: f64 ) -> Result<String> {
+
+    if card.get().is_none() {
+        return Err(anyhow!("Theres no card in the state"));
+    }
+
+    let mut card_clone = card.get().as_ref().unwrap().clone();
+    let mut atm_clone = atm.get().clone();
+
+    let dinero = card_clone.balance - opcion;
+    let atm_dinero = atm_clone.money - opcion;
+
+    if !(dinero >= 0. && atm_dinero >= 0.) {
+        println!("No tienes suficiente dinero");
+    }
+
+    if card_clone.r#type == "Debit" {
+        let _ = sqlx::query(
+            &format!(r#"UPDATE cards SET balance = {} WHERE number = {}"#, dinero, card_clone.number),
+        ).execute(connection).await?;
+        let _ = sqlx::query(
+            &format!(r#"UPDATE atms SET money = {} WHERE name = "{}""#, atm_dinero, atm_clone.name),
+        ).execute(connection).await?;
+        let _ = sqlx::query(
+            &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm_clone.name, card_clone.number),
+        ).execute(connection).await?;
+
+        let final_balance =  card_clone.balance;
+
+        card_clone.balance = dinero;
+        card.set(Some(card_clone));
+        atm_clone.money = atm_dinero;
+        atm.set(atm_clone);
+        Ok(format!("Retiro exitoso {}", final_balance))
+    } else {
+        let deudas = make_query::<Deuda>(
+            format!("Select * from deudas where number = {}", card_clone.number),
+            connection
+        ).await?;
+
+        if deudas.len() != 1 {
+            return Ok("No encontró la tarjeta".to_string());
+        }
+
+        let dinero_credito = deudas[0].deuda + opcion + (opcion * 0.03);
+        if dinero_credito >= 0. && dinero_credito <= card_clone.balance {
+            let _ = sqlx::query(
+                &format!(r#"UPDATE deudas SET deuda = {} WHERE number = "{}""#, dinero_credito,card_clone.number),
+            ).execute(connection).await?;
+            let _ = sqlx::query(
+                &format!(r#"UPDATE atms SET money = {} WHERE name = "{}""#, atm_dinero,atm_clone.name),
+            ).execute(connection).await?;
+            let _ = sqlx::query(
+                &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm_clone.name, card_clone.number),
+            ).execute(connection).await?;
+            return Ok(format!("Retiro exitoso {}", dinero_credito));
+        } else {
+            return Ok(format!("No tienes deuda o saldo mayor al que hay que pagar"))
+        }
+    }
 }
 /*
 async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
@@ -84,58 +140,7 @@ async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
                break;
             },
             Opcion::RetirarEfectivo => {
-                let opcion = elegir_dinero()? as i32 as f64;
 
-                let dinero = card.balance - opcion;
-
-                let atm_dinero = atm.money - opcion;
-
-                if !(dinero >= 0.  && atm_dinero >= 0.) {
-                    println!("No tienes suficiente dinero");
-                    continue
-                }
-
-                if card.r#type == "Debit" {
-                    let _ = sqlx::query(
-                        &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
-                    ).execute(connection).await?;
-                    let _ = sqlx::query(
-                        &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
-                    ).execute(connection).await?;
-                    let _ = sqlx::query(
-                        &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm.name, card.number),
-                    ).execute(connection).await?;
-
-                    card.balance = dinero;
-                    atm.money = atm_dinero;
-                    println!("Retiro exitoso {}", card.balance);
-                } else {
-                    let deudas = make_query::<Deuda>(
-                        format!("Select * from deudas where number = {}",card.number),
-                        connection
-                    ).await?;
-
-                    if deudas.len() != 1 {
-                        println!("No encontró la tarjeta");
-                        continue
-                    }
-
-                    let dinero_credito = deudas[0].deuda + opcion + (opcion*0.03);
-                    if dinero_credito >= 0. && dinero_credito <= card.balance {
-                        let _ = sqlx::query(
-                            &format!(r#"UPDATE deudas SET deuda = {dinero_credito} WHERE number = "{}""#, card.number),
-                        ).execute(connection).await?;
-                        let _ = sqlx::query(
-                            &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
-                        ).execute(connection).await?;
-                        let _ = sqlx::query(
-                            &format!(r#"INSERT INTO withdrawals (amount, atm_name, card_number) VALUES ({},"{}","{}")"#, opcion as i32, atm.name, card.number),
-                        ).execute(connection).await?;
-
-                    } else {
-                        println!("No tienes deuda o saldo mayor al que hay que pagar");
-                        break
-                    }
                 }
 
             },
@@ -277,114 +282,207 @@ async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
     Ok(())
 }
 */
-impl TryFrom<u8> for MoneyOptions {
-    type Error = Error;
-    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
-        use MoneyOptions::*;
-        let tipo = match value {
-            x if x == 1 => Q100,
-            x if x == 2 => Q200,
-            x if x == 3 => Q500,
-            x if x == 4 => Q1000,
-            x if x == 5 => Q2000,
-            x if x == 6 => Q4000,
-            _ => {
-                return Err(anyhow!("Opción no valida"));
-            }
-        };
-        Ok(tipo)
-    }
-}
-
-impl TryFrom<u8> for Opcion {
-    type Error = Error;
-    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
-        use Opcion::*;
-        let tipo = match value {
-            x if x == 1 => ConsultarSaldo,
-            x if x == 2 => RetirarEfectivo,
-            x if x == 3 => DepositarEfectivo,
-            x if x == 4 => TransferirEfectivo,
-            x if x == 5 => Salir,
-            _ => {
-                return Err(anyhow!("Opción no valida"));
-            }
-        };
-        Ok(tipo)
-    }
-}
-
-fn elegir_dinero() -> Result<MoneyOptions> {
-    let opcion = loop {
-        println!("1. 100 $ pesos");
-        println!("2. 200 $ pesos");
-        println!("3. 500 $ pesos");
-        println!("4. 1000 $ pesos");
-        println!("5. 2000 $ pesos");
-        println!("6. 4000 $ pesos");
-        let opcion: u8 = input("Elige una opción: ")?.parse()?;
-
-        if let Ok(money) = MoneyOptions::try_from(opcion) {
-            break money;
-        } else {
-            println!("Opción no válida");
-        }
-    };
-    Ok(opcion)
-}
-
 
 fn Main(cx: Scope) -> Element{
-    let connection: &UseState<Arc<Mutex<MySqlPool>>>;
-    let atm: &UseState<Arc<Mutex<Atm>>>;
+    let connection: &UseState<MyPool>;
+    let atm: &UseState<Atm>;
     let card : &UseState<Option<Card>> = use_state(&cx, || None);
 
-    let future = use_future(&cx, (), |()|  async move {
-        let connection = MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap();
-        let atmm = get_atm(&connection).await.unwrap();
-        (Arc::new(Mutex::new(connection)), Arc::new(Mutex::new(atmm)))
+    let future: &UseFuture<Result<_>> = use_future(&cx, (), |()|  async move {
+        let connection = MyPool { connection: MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap() };
+        let atm = get_atm(&connection.connection).await?;
+        Ok((connection, atm))
     });
 
-
     match future.value() {
-        Some((con, atmm)) => {
-            connection =  use_state(&cx, || Arc::clone(con));
-            atm =  use_state(&cx, || Arc::clone(atmm));
+        Some(res) => {
+            if let Ok((_con, _atm)) = res {
+                atm = use_state(&cx, || _atm.clone());
+                connection = use_state(&cx, || _con.clone());
 
-            cx.render(rsx!{
+                cx.render(rsx!{
                 Router {
-                    Route { to: "/", Login { card: card.clone() } }
+                    Route { to: "/", Login { card: card.clone(), connection: connection.clone() } }
                     Route { to: "/user", Vacio { card: card.clone() } }
-                    Route{to: "/consult", Consulta { card: card.clone()} }
+                    Route{to: "/consult", Consulta { card: card.clone(), connection: connection.clone()} }
+                    Route{to: "/withdrawal",
+                        Retiro {
+                            card: card.clone(),
+                            atm: atm.clone(),
+                            connection: connection.clone()
+                        }
+                    }
                 }
             })
+            } else {
+                cx.render(rsx!{
+                    [format_args!("Error al obtener el atm: {:?}", res.as_ref().unwrap_err())]
+                })
+            }
         },
         None => { None },
     }
 }
-//aqui queria o en otra funcion mandar a llamar la funcion que esta arriba pero no se como hacerlo se llama consultar_salo pero solo seria para las de credito
-// igual pense en que chcance cuando inicie seción ya haga ese desmadre pero no esatba seguro
+
 #[inline_props]
-fn Consulta (cx: Scope, card: UseState<Option<Card>>, )-> Element{
-    if card.get().iter().next().unwrap().r#type == "Credit" {
+fn Retirador(cx: Scope, connection: UseState<MyPool>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: f64 ) -> Element {
+    let future = use_future(&cx, (connection.get()), |(connection)| {
+        dioxus::core::to_owned![atm, card, opcion];
+        async move {
+            retira_dinero(&connection.connection, atm, card, opcion).await
+        }
     }
+    );
+    let router = use_router(&cx);
 
-    cx.render(rsx! {
+
+    match future.value() {
+        Some(data) => {
+            router.push_route("/", None, None);
+            cx.render(rsx!{
+                p {}
+            })
+        }
+        None => None
+    }
+}
+
+#[inline_props]
+fn Retiro(cx: Scope, card: UseState<Option<Card>>, atm: UseState<Atm>, connection: UseState<MyPool>)->Element{
+    let valor = use_state(&cx, || 100);
+    let activador = use_state(&cx, || false);
+
+    cx.render(rsx!{
         link {
-            rel:"stylesheet",
-            href:"/static/tailwindcss.css"
-        },
+                rel:"stylesheet",
+                href:"/static/tailwindcss.css"
+            },
+        form {
+            class: "flex flex-col",
+            div {
+                class: "mb-10",
 
-            p { "Saldo" }
-            card.get().is_some().then(|| {
-                rsx!{
-                    p {
-                    //esto solo es para las de debito
-                        [format_args!("Su saldo es  {:?} $ ", card.get().iter().next().unwrap().balance)]
+                div {
+                    "{valor}",
+                    div {
+                        activador.then(|| {
+                            println!( "Se llamo la funcion con valor {valor}");
+                            rsx!{
+                                Retirador {
+                                    connection: connection.clone(),
+                                    atm: atm.clone(),
+                                    card: card.clone(),
+                                    opcion: *valor.get() as f64
+                                }
+                            }
+                        })
                     }
                 }
+            }
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(100); activador.set(true)},
+                "100 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(200); activador.set(true)},
+                "200 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(500); activador.set(true)},
+                "500 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(1000); activador.set(true)},
+                "1000 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(2000); activador.set(true)},
+                "2000 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(4000); activador.set(true)},
+                "4000 $"
+            }}
+
+        }
+    })
+}
+
+#[inline_props]
+fn Consulta (cx: Scope, card: UseState<Option<Card>>, connection: UseState<MyPool>)-> Element{
+
+    let tarjeta = if let Some(c) = card.get() {
+        c.number.to_owned()
+    } else {
+        return cx.render(rsx!{
+            "Error, algo salio mal."
+        });
+    };
+
+    let future = use_future(&cx, (&tarjeta, connection.get()), |(tarjeta, connection)| async move {
+        consultar_saldo(&connection.connection, &tarjeta).await
+    });
+
+
+    match future.value() {
+        Some(value) => {
+            cx.render(rsx! {
+            link {
+                rel:"stylesheet",
+                href:"/static/tailwindcss.css"
+            },
+
+                p { "Saldo" }
+                card.get().is_some().then(|| {
+                    rsx!{
+                        p {
+                        //esto solo es para las de credito
+                            if card.get().iter().next().unwrap().r#type == "Credit" {
+                                if value.is_ok() {
+                                    rsx!{
+                                        [format_args!("Su saldo es  {:?} $ ", card.get().iter().next().unwrap().balance - value.as_ref().unwrap() )]
+                                    }
+                                } else {
+                                    rsx!{
+                                        "Algo salio mal al obtener la deuda"
+                                    }
+                                }
+
+                            } else {
+                                 //esto solo es para las de debito
+                                rsx!{
+                                    [format_args!("Su saldo es  {:?} $ ", card.get().iter().next().unwrap().balance)]
+                                }
+
+                            }
+
+
+                        }
+                        div {
+                            class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                                Link {
+                                    to: "/user",
+                                    "Regresar"
+                                     },
+                             },
+                    }
+                })
             })
-        })
+        },
+        None => None
+    }
 }
 
 #[inline_props]
@@ -441,10 +539,9 @@ fn Vacio(cx: Scope, card: UseState<Option<Card>>) -> Element {
 }
 
 #[inline_props]
-fn Logger(cx: Scope, card: UseState<Option<Card>>, user: String, password: String) -> Element {
-    let future = use_future(&cx, (user, password), |(user, password)|  async move {
-        let connection = MySqlPool::connect("mysql://daniel:1234@localhost/banco").await.unwrap();
-        iniciar_sesion(&connection, &user, &password).await
+fn Logger(cx: Scope, card: UseState<Option<Card>>, user: String, password: String, connection: UseState<MyPool>) -> Element {
+    let future = use_future(&cx, (user, password, connection.get()), |(user, password, connection)|  async move { ;
+        iniciar_sesion(&connection.connection, &user, &password).await
     });
     let router = use_router(&cx);
 
@@ -465,7 +562,7 @@ fn Logger(cx: Scope, card: UseState<Option<Card>>, user: String, password: Strin
 }
 
 #[inline_props]
-fn Login(cx: Scope, card: UseState<Option<Card>>, ) -> Element {
+fn Login(cx: Scope, card: UseState<Option<Card>>, connection: UseState<MyPool>) -> Element {
 
     let user: &UseState<String> = use_state(&cx, || "".to_owned());
     let password: &UseState<String> = use_state(&cx, || "".to_owned());
@@ -539,7 +636,14 @@ fn Login(cx: Scope, card: UseState<Option<Card>>, ) -> Element {
                             },
                                 {
                                     try_log.then(|| {
-                                        rsx! { Logger { card: card.clone(), user: user.get().to_owned(), password: password.get().to_owned() } }
+                                        rsx! {
+                                            Logger {
+                                                card: card.clone(),
+                                                user: user.get().to_owned(),
+                                                password: password.get().to_owned(),
+                                                connection: connection.clone()
+                                            }
+                                        }
                                     })
                                 },
                             p { class: "text-sm font-semibold mt-2 pt-1 mb-0",

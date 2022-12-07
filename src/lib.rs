@@ -32,7 +32,7 @@ pub struct Deuda {
     pub deuda:f64,
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Clone, PartialEq, PartialOrd, Default)]
 pub struct Atm {
     pub name:String,
     pub address:String,

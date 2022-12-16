@@ -1,3 +1,4 @@
+use std::any::Any;
 use anyhow::{anyhow, Error, Result};
 use dioxus::events::onchange;
 use dioxus::prelude::*;
@@ -124,13 +125,18 @@ async fn retira_dinero(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card:
         }
     }
 }
-async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: f64, cliend_card: String, ) -> Result<String> {
+async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: String, cliend_card: String, ) -> Result<String> {
+
+    let opciones = opcion.parse::<f64>().unwrap();
+    println!("Opcion {}", opciones); 
+    println!("{}",cliend_card);
+
     if card.get().is_none() {
         return Err(anyhow!("Theres no card in the state"));
     }
     let mut card_clone = card.get().as_ref().unwrap().clone();
 
-    let dinero = card_clone.balance - opcion;
+    let dinero = card_clone.balance - opciones;
 
     if !(dinero >= 0.) {
         println!("No tienes suficiente dinero");
@@ -148,7 +154,7 @@ async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseStat
     } else {
         target.into_iter().next().unwrap()
     };
-    let dinero = card_clone.balance - opcion;
+    let dinero = card_clone.balance - opciones;
     if target.r#type == "Debit" {
         let _ = sqlx::query(&format!(
             r#"UPDATE cards SET balance = {} WHERE number = {}"#,
@@ -156,7 +162,7 @@ async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseStat
         )).execute(connection).await?;
         let _ = sqlx::query(&format!(
             r#"UPDATE cards SET balance = {} WHERE number = {}"#,
-            target.balance + opcion,
+            target.balance + opciones,
             target.number
         )).execute(connection).await?;
         let _ = sqlx::query(&format!(
@@ -175,7 +181,7 @@ async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseStat
         } else {
             deudas.into_iter().next().unwrap()
         };
-        let dinero_deuda = deuda.deuda - opcion;
+        let dinero_deuda = deuda.deuda - opciones;
         if dinero_deuda >= 0. && dinero_deuda <= target.balance {
             let _ = sqlx::query(&format!(
                 r#"UPDATE cards SET balance = {} WHERE number = {}"#,
@@ -200,98 +206,49 @@ async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseStat
     return Ok("Transferencia exitosa".to_string());
 }
 /*
-async fn map(atm: &mut Atm, connection: &sqlx::Pool<MySql>) -> Result<()>  {
+let opcion = elegir_dinero()?;
+let dinero = card.balance + opcion as i32 as f64;
+let atm_dinero = atm.money + opcion as i32 as f64;
+if card.r#type == "Debit" {
+    let _ = sqlx::query(
+        &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
+    ).execute(connection).await?;
+    let _ = sqlx::query(
+        &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
+    ).execute(connection).await?;
+    let _ = sqlx::query(
+        &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opcion as i32,card.number ,atm.name),
+    ).execute(connection).await?;
+    card.balance = dinero;
+    atm.money = atm_dinero;
+    println!("Deposito exitoso {} ", card.balance);
+}else {
+    let mut deudas = make_query::<Deuda>(
+        format!("Select * from deudas where number = {}",card.number),
+        connection
+    ).await?;
+    if deudas.len() == 1 {
+        let dinero_deuda = deudas[0].deuda - opcion as i32 as f64;
+        if dinero_deuda >= 0. {
+            let _ = sqlx::query(
+                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE number = "{}""#, card.number),
+            ).execute(connection).await?;
+            let _ = sqlx::query(
+                &format!(r#"UPDATE atms SET money = {atm_dinero} WHERE name = "{}""#, atm.name),
+            ).execute(connection).await?;
+            let _ = sqlx::query(
+                &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opcion as i32,card.number ,atm.name),
+            ).execute(connection).await?;
+            deudas[0].deuda = dinero_deuda;
 
-
-            Opcion::TransferirEfectivo => {
-                loop {
-                    if card.r#type == "Credit" {
-                        println!("No puedes realizar esta operación con una tarjeta de crédito");
-                        continue;
-                    }
-
-                    let numero_tarjeta = input("Ingresa el número de la tarjeta: ")?;
-
-                    if numero_tarjeta == card.number {
-                        println!("No puedes transferirte a ti mismo");
-                        continue;
-                    }
-                    let q = format!("select * from cards where number = '{numero_tarjeta}'");
-                    let mut target = make_query::<Card>(&q, connection).await;
-
-                    let target = if let Ok(target) = target {
-                        target
-                    } else {
-                        println!("No existe la tarjeta");
-                        continue;
-                    };
-
-                    let target = if target.len() != 1  {
-                        println!("No existe la tarjeta");
-                        continue;
-                    } else {
-                        target.into_iter().next().unwrap()
-                    };
-
-                    let opcion = elegir_dinero()? as i32 as f64;
-                    let dinero = card.balance - opcion;
-
-                    if target.r#type == "Debit" {
-                        let _ = sqlx::query(
-                            &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
-                        ).execute(connection).await?;
-                        let _ = sqlx::query(
-                            &format!(r#"UPDATE cards SET balance = {} WHERE number = {}"#, target.balance + opcion, target.number),
-                        ).execute(connection).await?;
-                        let _ = sqlx::query(
-                            &format!(r#"INSERT INTO transfers (amount, sent_money, received_money) VALUES ({}, "{}","{}")"#, opcion, card.number, target.number),
-                        ).execute(connection).await?;
-                        card.balance = dinero;
-                        println!("Transferencia exitosa {} ", card.balance);
-                        break;
-                    } else {
-                        let deudas = make_query::<Deuda>(
-                            format!("Select * from deudas where number = {}", target.number),
-                            connection
-                        ).await?;
-
-                        let mut deuda = if deudas.len() != 1 {
-                            println!("No encontró la tarjeta");
-                            continue;
-                        } else {
-                            deudas.into_iter().next().unwrap()
-                        };
-
-                        let dinero_deuda = deuda.deuda - opcion;
-                        println!("{} | {dinero_deuda} : {} - {}", target.balance, deuda.deuda, opcion);
-
-                        if dinero_deuda >= 0. && dinero_deuda <= target.balance {
-                            let _ = sqlx::query(
-                                &format!(r#"UPDATE cards SET balance = {dinero} WHERE number = {}"#, card.number),
-                            ).execute(connection).await?;
-                            let _ = sqlx::query(
-                                &format!(r#"UPDATE deudas SET deuda = {dinero_deuda} WHERE number = "{}""#, target.number),
-                            ).execute(connection).await?;
-                            let _ = sqlx::query(
-                                &format!(r#"INSERT INTO transfers (amount, sent_money, received_money) VALUES ({}, "{}","{}")"#, opcion, card.number, target.number),
-                            ).execute(connection).await?;
-                            deuda.deuda = dinero_deuda;
-                            println!("Transferencia exitosa {} ", card.balance);
-                            break;
-                        }
-                        else {
-                            println!("No tienes deuda o saldo mayor al que hay que pagar");
-                            break
-                        }
-                    }
-                }
-            },
-            Opcion::Salir => {
-                break;
-            }
         }
+        else {
+            println!("No tienes deuda o saldo mayor al que hay que pagar");
+            break
+        }
+    }else {
+        println!("No encontró la tarjeta");
     }
-    Ok(())
 }
 */
 
@@ -327,7 +284,13 @@ fn Main(cx: Scope) -> Element {
                             connection: connection.clone()
                         }
                     }
-
+                    Route{to: "/transfer",
+                        Transac {
+                            card: card.clone(),
+                            atm: atm.clone(),
+                            connection: connection.clone(),
+                        }
+                    }
                 }
             })
             } else {
@@ -341,7 +304,7 @@ fn Main(cx: Scope) -> Element {
 }
 
 #[inline_props]
-fn Transaction(cx: Scope, connection: UseState<MyPool>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: f64,cliend_card: String ) -> Element {
+fn Transaction(cx: Scope, connection: UseState<MyPool>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: String,cliend_card: String ) -> Element {
     let future = use_future(&cx, (connection.get()), |(connection)| {
         dioxus::core::to_owned![atm, card, opcion, cliend_card];
         async move { trans(&connection.connection, atm, card, opcion, cliend_card).await }
@@ -356,6 +319,99 @@ fn Transaction(cx: Scope, connection: UseState<MyPool>, atm: UseState<Atm>, card
         }
         None => None,
     }
+}
+#[inline_props]
+fn Transac(cx: Scope, connection: UseState<MyPool>, atm: UseState<Atm>, card: UseState<Option<Card>>, )-> Element{
+    let cliend_card: &UseState<String> = use_state(&cx, || "".to_owned());
+    let opcion: &UseState<String> = use_state(&cx, || "".to_owned());
+    let try_log: &UseState<bool> = use_state(&cx, || false);
+    cx.render(rsx! {
+        link {
+            rel:"stylesheet",
+            href:"/static/tailwindcss.css"
+        },
+        section { class: "h-screen",
+        div { class: "px-6 h-full text-gray-800",
+            div { class: "flex xl:justify-center lg:justify-between justify-center items-center flex-wrap h-full g-6",
+                div { class: "xl:ml-20 xl:w-5/12 lg:w-5/12 md:w-8/12 mb-12 md:mb-0",
+                    form {
+                        id: "myForm",
+                        /* Email input */
+                        div { class: "mb-6",
+                            input { class: "form-control block w-full px-4 py-2 text-xl font-normal text-gray-700 bg-white bg-clip-padding border border-solid border-gray-300 rounded transition ease-in-out m-0 focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none",
+                                value: "{cliend_card}",
+                                name: "cliend_card",
+                                r#type: "text",
+                                placeholder: "tarjeta",
+                                onchange: |evt| {
+                                    cliend_card.set(evt.value.clone());
+                                }
+                            }
+                        }
+                        /* Password input */
+                        div { class: "mb-6",
+                            input { class: "form-control block w-full px-4 py-2 text-xl font-normal text-gray-700 bg-white bg-clip-padding border border-solid border-gray-300 rounded transition ease-in-out m-0 focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none",
+                                value: "{opcion}",
+                                    r#type: "dinero",
+                                name: "opcion",
+                                placeholder: "Dinero",
+                                onchange: |evt| {
+                                    opcion.set(evt.value.clone());
+                                }
+                            }
+                        }
+                        div { class: "flex justify-between items-center mb-6",
+                            div { class: "form-group form-check",
+                                input { class: "form-check-input appearance-none h-4 w-4 border border-gray-300 rounded-sm bg-white checked:bg-blue-600 checked:border-blue-600 focus:outline-none transition duration-200 mt-1 align-top bg-no-repeat bg-center bg-contain float-left mr-2 cursor-pointer",
+                                    id: "exampleCheck2",
+                                    r#type: "checkbox",
+                                }
+                                label { class: "form-check-label inline-block text-gray-800",
+                                    r#for: "exampleCheck2",
+                                    "Remember me"
+                                }
+                            }
+                            a { class: "text-gray-800",
+                                href: "#!",
+                                "Forgot password?"
+                            }
+                        }
+                        div { class: "text-center lg:text-left",
+                            button { class: "inline-block px-7 py-3 bg-blue-600 text-white font-medium text-sm leading-snug uppercase rounded shadow-md hover:bg-blue-700 hover:shadow-lg focus:bg-blue-700 focus:shadow-lg focus:outline-none focus:ring-0 active:bg-blue-800 active:shadow-lg transition duration-150 ease-in-out",
+                                prevent_default: "onclick",
+                                    onclick: move |evt| {
+                                        try_log.set(true);
+                                    },
+
+                                    "Transferir"
+                            },
+                                {
+                                    try_log.then(|| {
+                                        rsx! {
+                                            Transaction {
+                                                card: card.clone(),
+                                                cliend_card: cliend_card.get().to_owned(),
+                                                opcion: opcion.get().to_owned(),
+                                                connection: connection.clone(),
+                                                atm: atm.clone(),
+                                            }
+                                        }
+                                    })
+                                },
+                            p { class: "text-sm font-semibold mt-2 pt-1 mb-0",
+                                "Don't have an account?"
+                                a { class: "text-red-600 hover:text-red-700 focus:text-red-700 transition duration-200 ease-in-out",
+                                    href: "#!",
+                                    "Register"
+                                    }
+                                }
+                             }
+                        }
+                    }
+                }
+            }
+        }
+    })
 }
 
 #[inline_props]

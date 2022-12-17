@@ -2,7 +2,7 @@
 # Sql 
 I use sql to design a database to use in atm machine.
 ![image](https://user-images.githubusercontent.com/92064764/204880114-458ffd65-e28d-4f82-aab1-ae64acb39a5f.png)
-
+![image](https://user-images.githubusercontent.com/92064764/208213310-edb4ff94-c523-4019-9b9d-200de70bc665.png)
 # SQLX 
 I use sqlx to update the database usign this two functions.
 ```Rust

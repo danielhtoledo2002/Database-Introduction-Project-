@@ -11,7 +11,7 @@ pub struct Banco {
 }
 
 #[derive(Clone)]
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, PartialEq, PartialOrd)]
 pub struct Card {
     pub number:String,
     pub bank_id:u32,
@@ -24,7 +24,7 @@ pub struct Card {
     pub r#try:u32,
 }
 #[derive(Clone)]
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, PartialEq, PartialOrd)]
 pub struct Deuda {
     pub id: u32,
     pub number:String,
@@ -32,7 +32,7 @@ pub struct Deuda {
     pub deuda:f64,
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Clone, PartialEq, PartialOrd, Default)]
 pub struct Atm {
     pub name:String,
     pub address:String,
@@ -63,6 +63,7 @@ pub async fn make_query<T>(query: impl AsRef<str>, connection: &sqlx::Pool<MySql
         Ok(result)
     }
 }
+
 
 
 pub async fn make_query_expect_empty<T>(query: impl AsRef<str>, connection: &sqlx::Pool<MySql>) -> Result<Vec<T>>

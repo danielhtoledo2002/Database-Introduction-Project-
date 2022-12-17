@@ -187,6 +187,7 @@ async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseStat
         return Err(anyhow!("Theres no card in the state"));
     }
     let mut card_clone = card.get().as_ref().unwrap().clone();
+    println!("{:?}",card_clone);
 
     let dinero = card_clone.balance - opciones;
 
@@ -201,7 +202,7 @@ async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseStat
     }
     let q = format!("select * from cards where number = {} ", cliend_card);
     let mut target = make_query::<Card>(q, connection).await?;
-    let target = if target.len() == 1 {
+    let target = if target.len() != 1 {
         return Err(anyhow!("Se encontró mas de un dato"));
     } else {
         target.into_iter().next().unwrap()

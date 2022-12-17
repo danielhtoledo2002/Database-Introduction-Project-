@@ -125,10 +125,62 @@ async fn retira_dinero(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card:
         }
     }
 }
+async fn depos(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseState<Option<Card>>, opciones: f64,)-> Result<String>{
+
+    if card.get().is_none() {
+        return Err(anyhow!("Theres no card in the state"));
+    }
+    let mut card_clone = card.get().as_ref().unwrap().clone();
+    let mut atm_clone = atm.get().clone();
+    let dinero = card_clone.balance + opciones as i32 as f64;
+    let atm_dinero = atm_clone.money + opciones as i32 as f64;
+    if card_clone.r#type == "Debit" {
+        let _ = sqlx::query(
+            &format!(r#"UPDATE cards SET balance = {} WHERE number = {}"#, dinero,card_clone.number),
+        ).execute(connection).await?;
+
+        let _ = sqlx::query(
+            &format!(r#"UPDATE atms SET money = {} WHERE name = "{}""#,atm_dinero, atm.name),
+        ).execute(connection).await?;
+        let _ = sqlx::query(
+            &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opciones as i32,card_clone.number ,atm_clone.name),
+        ).execute(connection).await?;
+        card_clone.balance = dinero;
+        atm_clone.money = atm_dinero;
+        println!(" Deposito exitoso {} ", card_clone.balance);
+    }else {
+        let mut deudas = make_query::<Deuda>(
+            format!("Select * from deudas where number = {}",card_clone.number),
+            connection
+        ).await?;
+        if deudas.len() == 1 {
+            let dinero_deuda = deudas[0].deuda - opciones as i32 as f64;
+            if dinero_deuda >= 0. {
+                let _ = sqlx::query(
+                    &format!(r#"UPDATE deudas SET deuda = {} WHERE number = "{}""#,dinero_deuda, card_clone.number),
+                ).execute(connection).await?;
+                let _ = sqlx::query(
+                    &format!(r#"UPDATE atms SET money = {} WHERE name = "{}""#,atm_dinero, atm.name),
+                ).execute(connection).await?;
+                let _ = sqlx::query(
+                    &format!(r#"INSERT INTO deposits (amount, card_number, atm_name) VALUES ({}, "{}","{}")"#, opciones as i32,card_clone.number ,atm.name),
+                ).execute(connection).await?;
+                deudas[0].deuda = dinero_deuda;
+
+            }
+            else {
+                println!("No tienes deuda o saldo mayor al que hay que pagar");
+            }
+        }else {
+            println!("No encontró la tarjeta");
+        }
+    }
+    return Ok("Deposito exitoso".to_string());
+}
 async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: String, cliend_card: String, ) -> Result<String> {
 
     let opciones = opcion.parse::<f64>().unwrap();
-    println!("Opcion {}", opciones); 
+    println!("Opcion {}", opciones);
     println!("{}",cliend_card);
 
     if card.get().is_none() {
@@ -154,6 +206,7 @@ async fn trans(connection: &sqlx::Pool<MySql>, atm: UseState<Atm>, card: UseStat
     } else {
         target.into_iter().next().unwrap()
     };
+    println!("Target {:?}", target);
     let dinero = card_clone.balance - opciones;
     if target.r#type == "Debit" {
         let _ = sqlx::query(&format!(
@@ -279,6 +332,13 @@ fn Main(cx: Scope) -> Element {
                     Route{to: "/consult", Consulta { card: card.clone(), connection: connection.clone()} }
                     Route{to: "/withdrawal",
                         Retiro {
+                            card: card.clone(),
+                            atm: atm.clone(),
+                            connection: connection.clone()
+                        }
+                    }
+                    Route{to: "/deposit",
+                        Depo {
                             card: card.clone(),
                             atm: atm.clone(),
                             connection: connection.clone()
@@ -451,6 +511,94 @@ fn Retiro(cx: Scope, card: UseState<Option<Card>>, atm: UseState<Atm>, connectio
                         activador.then(|| {
                             rsx!{
                                 Retirador {
+                                    connection: connection.clone(),
+                                    atm: atm.clone(),
+                                    card: card.clone(),
+                                    opcion: *valor.get() as f64
+                                }
+                            }
+                        })
+                    }
+                }
+            }
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(100); activador.set(true)},
+                "100 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(200); activador.set(true)},
+                "200 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(500); activador.set(true)},
+                "500 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(1000); activador.set(true)},
+                "1000 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(2000); activador.set(true)},
+                "2000 $"
+            }},
+            div {button {
+                class: "rounded-md p-5 m-2 bg-black text-white font-bold",
+                prevent_default: "onclick",
+                onclick: |_evt| {valor.set(4000); activador.set(true)},
+                "4000 $"
+            }}
+
+        }
+    })
+}
+#[inline_props]
+fn Depositador(cx: Scope, connection: UseState<MyPool>, atm: UseState<Atm>, card: UseState<Option<Card>>, opcion: f64, ) -> Element {
+    let future = use_future(&cx, (connection.get()), |(connection)| {
+        dioxus::core::to_owned![atm, card, opcion];
+        async move { depos(&connection.connection, atm, card, opcion).await }
+    });
+    let router = use_router(&cx);
+    match future.value() {
+        Some(data) => {
+            router.push_route("/", None, None);
+            cx.render(rsx! {
+                p {}
+            })
+        }
+        None => None,
+    }
+}
+
+#[inline_props]
+fn Depo(cx: Scope, card: UseState<Option<Card>>, atm: UseState<Atm>, connection: UseState<MyPool>, ) -> Element {
+    let valor = use_state(&cx, || 1);
+    let activador = use_state(&cx, || false);
+    cx.render(rsx! {
+        link {
+                rel:"stylesheet",
+                href:"/static/tailwindcss.css"
+            },
+        form {
+            class: "flex flex-col",
+            div {
+                class: "mb-10",
+
+                div {
+                    "{valor}",
+                    div {
+                        activador.then(|| {
+                            rsx!{
+                                Depositador {
                                     connection: connection.clone(),
                                     atm: atm.clone(),
                                     card: card.clone(),

@@ -37,6 +37,6 @@ pub async fn make_query_expect_empty<T>(query: impl AsRef<str>, connection: &sql
 ```
 
 # How to run ?
-* To run the ddl use any sql compiler 
+* To run the ddl use any sql compiler `source bank.sql `
 * To compile the user app use `cargo run --bin usuarios`
 * To compile the admin app use `cargo run --bin admins`
